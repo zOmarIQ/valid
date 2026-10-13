@@ -1,0 +1,2530 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>أتمتة صحة صدور الوثائق — دمج بيانات ملفين إكسل داخل المتصفح</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // اجعل خط الواجهة هو الخط الافتراضي في Tailwind (يُنشئه preflight على html)
+  if (window.tailwind) {
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"IBM Plex Sans Arabic"', 'system-ui', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace']
+          }
+        }
+      }
+    };
+  }
+</script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+
+<style>
+  :root{
+    --paper:#F3F6F3;
+    --surface:#FFFFFF;
+    --ink:#0F231B;
+    --ink-2:#3C554B;
+    --ink-3:#6E857B;
+    --line:#DCE4DE;
+    --line-strong:#BFCDC5;
+    --green:#0A6B4A;
+    --green-deep:#06503A;
+    --green-wash:#E2F1E9;
+    --amber:#8E5A06;
+    --amber-wash:#FBF1DA;
+    --red:#9E3226;
+    --red-wash:#FBE8E5;
+    --grid:rgba(15,35,27,.045);
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --radius:10px;
+  }
+
+  html{ -webkit-text-size-adjust:100% }
+  body{
+    background-color:var(--paper);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size:26px 26px;
+    color:var(--ink);
+    line-height:1.75;
+  }
+  ::selection{ background:var(--green-wash) }
+
+  :focus-visible{ outline:2px solid var(--green); outline-offset:2px; border-radius:4px }
+  button:disabled{ cursor:not-allowed }
+
+  .wrap{ max-width:1160px; margin-inline:auto; padding-inline:20px }
+
+  /* ---------- الترويسة ---------- */
+  .site-head{ border-bottom:1px solid var(--line-strong); background:rgba(255,255,255,.72); backdrop-filter:blur(6px); position:sticky; top:0; z-index:30 }
+  .mark{ width:44px; height:44px; flex:none; object-fit:contain; display:block }
+  .site-title{ font-size:20px; font-weight:700; letter-spacing:-.01em; line-height:1.2; margin:0 }
+  .site-sub{ font-size:12.5px; color:var(--ink-3); margin:0; line-height:1.5 }
+  .badge{ font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--green); background:var(--green-wash); border:1px solid #C7E2D3; border-radius:999px; padding:3px 10px; white-space:nowrap }
+
+  /* ---------- الفوتر ---------- */
+  .site-foot{ border-top:1px solid var(--line-strong); background:rgba(255,255,255,.6); margin-top:8px }
+  .foot-row{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 22px; font-size:12.5px; color:var(--ink-3) }
+  .ver{ font-family:var(--mono); font-size:11.5px; color:var(--ink-3); background:#F8FAF8; border:1px solid var(--line); border-radius:999px; padding:2px 10px }
+  .ver b{ color:var(--green); font-weight:600 }
+  .dev{ margin-inline-start:auto; display:inline-flex; align-items:center; gap:6px }
+  .dev a{ color:var(--green); font-weight:600; text-decoration:none; border-bottom:1px solid transparent; transition:.18s }
+  .dev a:hover{ color:var(--green-deep); border-bottom-color:var(--green) }
+
+  /* ---------- الشريط الجانبي ---------- */
+  .rail-inner{ position:sticky; top:92px }
+  .rail-title{ font-size:11.5px; color:var(--ink-3); margin:0 0 12px; font-weight:600 }
+  .steps{ list-style:none; margin:0; padding:0 }
+  .steps li{ display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px solid var(--line); font-size:13.5px; color:var(--ink-3) }
+  .steps li:last-child{ border-bottom:1px solid var(--line) }
+  .steps .n{ font-family:var(--mono); font-size:11px; width:26px; height:22px; display:grid; place-items:center; border:1px solid var(--line-strong); border-radius:5px; color:var(--ink-3); flex:none; transition:.2s }
+  .steps li.is-active{ color:var(--ink); font-weight:600 }
+  .steps li.is-active .n{ border-color:var(--green); color:var(--green); background:var(--green-wash) }
+  .steps li.is-done{ color:var(--ink-2) }
+  .steps li.is-done .n{ border-color:#B9D8C8; background:var(--green); color:#fff; border-color:var(--green) }
+  .rail-files{ margin-top:22px }
+  .rail-file{ font-size:12px; padding:8px 0; border-top:1px solid var(--line) }
+  .rail-file b{ display:block; font-weight:600; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .rail-file span{ font-family:var(--mono); font-size:11px; color:var(--ink-3) }
+
+  /* ---------- الأقسام ---------- */
+  .panel{ border-top:1px solid var(--line-strong); padding:34px 0 46px; scroll-margin-top:90px }
+  .panel-head{ display:flex; gap:14px; align-items:flex-start; margin-bottom:24px }
+  .step-no{ font-family:var(--mono); font-size:12px; font-weight:600; width:32px; height:32px; flex:none; display:grid; place-items:center; border:1px solid var(--line-strong); border-radius:7px; color:var(--green); background:var(--surface) }
+  .panel h2{ font-size:21px; font-weight:700; margin:0; line-height:1.35; letter-spacing:-.01em }
+  .panel .lede{ font-size:13.5px; color:var(--ink-3); margin:2px 0 0; max-width:62ch }
+  .panel-flag{ margin-inline-start:auto; font-family:var(--mono); font-size:11px; color:var(--ink-3); padding-top:6px; white-space:nowrap }
+
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px }
+  .card + .card{ margin-top:14px }
+  .card-title{ font-size:14px; font-weight:600; margin:0 0 2px }
+  .card-note{ font-size:12px; color:var(--ink-3); margin:0 }
+
+  /* ---------- منطقة الإفلات ---------- */
+  .drop{
+    border:1.5px dashed var(--line-strong); border-radius:var(--radius);
+    background:linear-gradient(0deg, rgba(255,255,255,.6), rgba(255,255,255,.6));
+    padding:26px 18px; text-align:center; cursor:pointer; transition:.18s background,.18s border-color;
+  }
+  .drop:hover,.drop.is-over{ border-color:var(--green); background:var(--green-wash) }
+  .drop.is-over{ border-style:solid }
+  .drop-ico{ width:30px; height:30px; margin:0 auto 8px; color:var(--green); display:block }
+  .drop-title{ font-size:14px; font-weight:600; margin:0 }
+  .drop-hint{ font-size:12px; color:var(--ink-3); margin:4px 0 0 }
+
+  .colchips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px }
+  .chip{ font-family:var(--mono); font-size:11px; border:1px solid var(--line); background:#F8FAF8; border-radius:6px; padding:2px 7px; color:var(--ink-2); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .chip .cl{ color:var(--green); font-weight:600; margin-inline-end:5px }
+  .chip.more{ background:transparent; border-style:dashed; color:var(--ink-3) }
+
+  /* ---------- الحقول ---------- */
+  label.fld{ display:block; font-size:12px; font-weight:600; color:var(--ink-2) }
+  label.fld .sub{ display:block; font-weight:400; color:var(--ink-3); font-size:11.5px; margin-top:1px }
+  .input, select.input{
+    width:100%; margin-top:5px; background:#fff; border:1px solid var(--line-strong);
+    border-radius:8px; padding:8px 10px; font-size:13.5px; color:var(--ink);
+    font-family:inherit; appearance:none;
+  }
+  select.input{
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%233C554B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+    background-repeat:no-repeat; background-position:left 10px center; padding-inline-start:30px;
+  }
+  .input:focus{ border-color:var(--green); outline:none; box-shadow:0 0 0 3px rgba(10,107,74,.13) }
+  input[type=number].input{ font-family:var(--mono) }
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--green); color:#fff; border:1px solid var(--green);
+    padding:10px 18px; border-radius:8px; font-size:14px; font-weight:600;
+    font-family:inherit; cursor:pointer; transition:.15s background,.15s transform;
+  }
+  .btn:hover:not(:disabled){ background:var(--green-deep); border-color:var(--green-deep) }
+  .btn:active:not(:disabled){ transform:translateY(1px) }
+  .btn:disabled{ background:#A9BCB3; border-color:#A9BCB3 }
+  .btn-ghost{
+    display:inline-flex; align-items:center; gap:6px; background:transparent; color:var(--ink-2);
+    border:1px solid var(--line-strong); border-radius:8px; padding:6px 12px;
+    font-size:12.5px; font-weight:600; font-family:inherit; cursor:pointer; transition:.15s;
+  }
+  .btn-ghost:hover{ border-color:var(--green); color:var(--green); background:var(--green-wash) }
+
+  /* ---------- معادلة المطابقة ---------- */
+  .eq{
+    display:grid; grid-template-columns:1fr; gap:14px;
+    border:1px solid var(--line); border-radius:var(--radius);
+    background:linear-gradient(0deg,#FBFDFB,#FBFDFB); padding:18px;
+  }
+  @media (min-width:768px){ .eq{ grid-template-columns:1fr 56px 1fr; align-items:center } }
+  .eq-mid{ display:grid; place-items:center; color:var(--green) }
+  .eq-mid span{ font-size:24px; line-height:1; }
+  .eq-badge{ font-family:var(--mono); font-size:10.5px; color:var(--ink-3) }
+  .keycheck{ margin-top:14px; font-size:12.5px; color:var(--ink-2); display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+  .keycheck b{ font-family:var(--mono); color:var(--green) }
+
+  /* ---------- صفوف نقل الحقول ---------- */
+  .fields{ border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:#fff }
+  .fields-head{ background:#F7FAF8; border-bottom:1px solid var(--line); padding:9px 14px; display:flex; align-items:center; gap:12px; font-size:11.5px; color:var(--ink-3); font-weight:600 }
+  .fields-body{ max-height:430px; overflow:auto }
+  .field-row{ display:grid; grid-template-columns:26px minmax(120px,1fr) 34px minmax(140px,1.25fr); align-items:center; gap:10px; padding:8px 14px; border-top:1px solid var(--line); transition:background .15s }
+  .field-row:first-child{ border-top:none }
+  .field-row:hover{ background:#FAFCFA }
+  .field-row.on{ background:var(--green-wash) }
+  .field-row.on:hover{ background:#D8ECE0 }
+  .fname{ font-size:13.5px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .fletter{ font-family:var(--mono); font-size:11px; color:var(--ink-3) }
+  .farrow{ color:var(--line-strong); display:grid; place-items:center }
+  .field-row.on .farrow{ color:var(--green) }
+  .fvanish{ opacity:.45 }
+  .field-row.on .fvanish{ opacity:1 }
+  .field-tgt input.newcol{ margin-top:4px }
+
+  input[type=checkbox].cbx{ appearance:none; width:17px; height:17px; border:1.5px solid var(--line-strong); border-radius:5px; background:#fff; cursor:pointer; display:grid; place-items:center; margin:0; flex:none }
+  input[type=checkbox].cbx:hover{ border-color:var(--green) }
+  input[type=checkbox].cbx:checked{ background:var(--green); border-color:var(--green) }
+  input[type=checkbox].cbx:checked::after{ content:""; width:9px; height:5px; border-left:2px solid #fff; border-bottom:2px solid #fff; transform:rotate(-45deg) translateY(-1px) }
+
+  .opt-row{ display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-top:1px solid var(--line) }
+  .opt-row:first-child{ border-top:none }
+  .opt-row.tall{ padding:11px 0 }
+  .opt-t{ font-size:13.5px; font-weight:500; line-height:1.5 }
+  .opt-s{ font-size:11.5px; color:var(--ink-3); line-height:1.6; margin:1px 0 0 }
+  .opt-grid{ display:grid; gap:0 }
+  @media (min-width:768px){ .opt-grid{ grid-template-columns:1fr 1fr; column-gap:28px } }
+
+  /* ---------- النتائج ---------- */
+  .stats{ display:grid; grid-template-columns:repeat(2,1fr); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:#fff }
+  @media (min-width:640px){ .stats{ grid-template-columns:repeat(4,1fr) } }
+  .stat{ padding:14px 16px; border-top:1px solid var(--line); border-inline-start:1px solid var(--line) }
+  .stat:first-child{ border-inline-start:none }
+  @media (max-width:639px){ .stat:nth-child(odd){ border-inline-start:none } }
+  .stat-n{ display:block; font-family:var(--mono); font-size:22px; font-weight:600; color:var(--ink); line-height:1.25 }
+  .stat-n.warn{ color:var(--amber) }
+  .stat-n.good{ color:var(--green) }
+  .stat-l{ font-size:11.5px; color:var(--ink-3) }
+
+  .notes{ margin-top:14px; display:grid; gap:8px }
+  .note{ display:flex; gap:9px; align-items:flex-start; font-size:12.5px; border:1px solid var(--line); border-radius:8px; padding:9px 12px; background:#fff; line-height:1.65 }
+  .note b{ font-weight:600 }
+  .note-info{ border-color:#C7E2D3; background:var(--green-wash) }
+  .note-warn{ border-color:#EBD9AE; background:var(--amber-wash) }
+  .note-err{ border-color:#EFC9C3; background:var(--red-wash) }
+  .note-dot{ width:7px; height:7px; border-radius:50%; background:var(--ink-3); margin-top:7px; flex:none }
+  .note-info .note-dot{ background:var(--green) }
+  .note-warn .note-dot{ background:var(--amber) }
+  .note-err .note-dot{ background:var(--red) }
+  .mono{ font-family:var(--mono) }
+
+  .empty{ border:1px dashed var(--line-strong); border-radius:var(--radius); padding:34px 20px; text-align:center; color:var(--ink-3); font-size:13px; background:rgba(255,255,255,.55) }
+
+  /* ---------- الجدول ---------- */
+  .pv-wrap{ border:1px solid var(--line); border-radius:var(--radius); overflow:auto; max-height:440px; background:#fff }
+  table.pv{ border-collapse:separate; border-spacing:0; font-size:12.5px; width:max-content; min-width:100% }
+  table.pv th, table.pv td{ border-bottom:1px solid var(--line); border-inline-end:1px solid var(--line); padding:5px 10px; text-align:start; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis }
+  table.pv thead th{ position:sticky; top:0; background:#F6F9F7; font-weight:600; z-index:2 }
+  table.pv thead tr.letters th{ top:0; font-family:var(--mono); font-size:10.5px; color:var(--ink-3); font-weight:500; text-align:center; padding:3px 10px; background:#FBFCFB; z-index:3 }
+  table.pv .rno{ font-family:var(--mono); font-size:10.5px; color:var(--ink-3); background:#FBFCFB; text-align:center; position:sticky; inset-inline-start:0; z-index:1 }
+  table.pv thead .rno{ z-index:4 }
+  table.pv td.changed{ background:var(--green-wash); box-shadow:inset -2px 0 0 var(--green) }
+  table.pv td.changed::after{ content:""; }
+
+  /* ---------- شريط التنفيذ ---------- */
+  .runbar{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:22px; border-top:1px solid var(--line); padding-top:20px }
+  .runbar .hint{ font-size:12px; color:var(--ink-3) }
+
+  /* ---------- التنبيهات ---------- */
+  .toasts{ position:fixed; inset-inline-start:20px; bottom:20px; z-index:80; display:flex; flex-direction:column; gap:9px; max-width:min(92vw,420px) }
+  .toast{ display:flex; gap:10px; align-items:flex-start; background:var(--surface); border:1px solid var(--line-strong); border-inline-start:3px solid var(--ink-3); border-radius:9px; padding:10px 12px; box-shadow:0 6px 22px rgba(15,35,27,.10); animation:toastIn .22s ease-out }
+  .toast p{ margin:0; font-size:13px; line-height:1.7; flex:1 }
+  .toast-dot{ width:7px; height:7px; border-radius:50%; background:var(--ink-3); margin-top:8px; flex:none }
+  .toast-success{ border-inline-start-color:var(--green) } .toast-success .toast-dot{ background:var(--green) }
+  .toast-warn{ border-inline-start-color:var(--amber) } .toast-warn .toast-dot{ background:var(--amber) }
+  .toast-error{ border-inline-start-color:var(--red) } .toast-error .toast-dot{ background:var(--red) }
+  .toast-info{ border-inline-start-color:var(--green) } .toast-info .toast-dot{ background:var(--green) }
+  .toast-x{ background:none; border:none; cursor:pointer; color:var(--ink-3); font-size:12px; padding:2px 4px; font-family:inherit }
+  .toast-x:hover{ color:var(--ink) }
+  .toast.out{ animation:toastOut .2s ease-in forwards }
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(8px) } to{ opacity:1; transform:none } }
+  @keyframes toastOut{ to{ opacity:0; transform:translateY(6px) } }
+
+  .sr{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0) }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important }
+  }
+</style>
+</head>
+<body class="font-sans">
+
+<!-- ================= الترويسة ================= -->
+<header class="site-head">
+  <div class="wrap flex items-center gap-3 py-3">
+    <img class="mark" src="data:image/png;base64,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" alt="شعار الكلية" width="44" height="44" decoding="async" />
+    <div class="flex-1 min-w-0">
+      <h1 class="site-title">أتمتة صحة صدور الوثائق</h1>
+      <p class="site-sub">نقل بيانات من ملف ضخم إلى قالب إكسل — بدون رفع أي شيء إلى الإنترنت.</p>
+    </div>
+    <button id="resetBtn" class="btn-ghost">بدء من جديد</button>
+  </div>
+</header>
+
+<div id="libError" class="wrap hidden pt-6">
+  <div class="note note-err">
+    <span class="note-dot"></span>
+    <div><b>تعذّر تحميل مكتبة قراءة الإكسل.</b><br>تحقّق من اتصالك بالإنترنت ثم أعد تحديث الصفحة، أو حمّل ملف <span class="mono">xlsx.full.min.js</span> محلياً وضعه بجانب هذه الصفحة.</div>
+  </div>
+</div>
+
+<div class="wrap grid lg:grid-cols-[236px_minmax(0,1fr)] gap-10 py-9">
+
+  <!-- ================= الشريط الجانبي ================= -->
+  <aside class="hidden lg:block">
+    <div class="rail-inner">
+      <p class="rail-title">مسار العمل</p>
+      <ol class="steps" id="stepsRail">
+        <li data-step="1"><span class="n">01</span><span class="t">تحميل الملفين</span></li>
+        <li data-step="2"><span class="n">02</span><span class="t">ربط الأعمدة</span></li>
+        <li data-step="3"><span class="n">03</span><span class="t">تصدير النتيجة</span></li>
+      </ol>
+      <div class="rail-files" id="railFiles"></div>
+    </div>
+  </aside>
+
+  <main class="min-w-0">
+
+    <!-- ================= 01 الملفات ================= -->
+    <section class="panel" id="panel1" style="border-top:none;padding-top:0">
+      <div class="panel-head">
+        <span class="step-no">01</span>
+        <div>
+          <h2>ارفع الملفين</h2>
+          <p class="lede">ملف البيانات الذي يحمل القيم، وملف القالب الذي سيتم تعبئته. يمكنك سحب الملف وإفلاته في المكان المخصص.</p>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+
+        <div class="card" id="srcCard">
+          <div class="drop" id="srcDrop" tabindex="0" role="button" aria-label="رفع ملف البيانات الضخمة">
+            <input type="file" id="srcInput" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+            <svg class="drop-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <path d="M12 15V10m0 0-2.2 2.2M12 10l2.2 2.2"/>
+            </svg>
+            <p class="drop-title">ملف البيانات الضخمة</p>
+            <p class="drop-hint">اسحب الملف هنا أو اضغط للاختيار — xlsx أو xls أو csv</p>
+          </div>
+          <div id="srcMeta" class="hidden"></div>
+        </div>
+
+        <div class="card" id="tgtCard">
+          <div class="drop" id="tgtDrop" tabindex="0" role="button" aria-label="رفع ملف القالب">
+            <input type="file" id="tgtInput" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+            <svg class="drop-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5z"/>
+              <path d="M10 4h8.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H10"/>
+              <path d="M13 9h4M13 13h4"/>
+            </svg>
+            <p class="drop-title">ملف القالب المطلوب ملؤه</p>
+            <p class="drop-hint">اسحب الملف هنا أو اضغط للاختيار — xlsx أو xls أو csv</p>
+          </div>
+          <div id="tgtMeta" class="hidden"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= 02 المطابقة ================= -->
+    <section class="panel" id="panel2">
+      <div class="panel-head">
+        <span class="step-no">02</span>
+        <div>
+          <h2>اربط الأعمدة</h2>
+          <p class="lede">اختر العمود الذي تتشابه قيمه في الملفين، ثم حدّد الحقول التي تريد نقلها إلى القالب.</p>
+        </div>
+        <span class="panel-flag" id="mapFlag"></span>
+      </div>
+
+      <div id="mapEmpty" class="empty">ارفع الملفين أعلاه لتظهر أعمدة كل ملف هنا.</div>
+
+      <div id="mapBody" class="hidden">
+        <div class="eq">
+          <div>
+            <label class="fld" for="srcKey">عمود المطابقة في ملف البيانات
+              <span class="sub">القيم التي سيُبحث بها داخل الملف الضخم</span>
+            </label>
+            <select class="input" id="srcKey"></select>
+          </div>
+          <div class="eq-mid"><span aria-hidden="true">⇄</span><span class="eq-badge">مفتاح الربط</span></div>
+          <div>
+            <label class="fld" for="tgtKey">عمود المطابقة في القالب
+              <span class="sub">العمود الذي يحمل نفس القيم وينتظر التعبئة</span>
+            </label>
+            <select class="input" id="tgtKey"></select>
+          </div>
+        </div>
+        <div class="keycheck" id="keyCheck"></div>
+
+        <div class="card mt-5">
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="flex-1 min-w-[200px]">
+              <p class="card-title">الحقول المنقولة</p>
+              <p class="card-note">علّم العمود لنقله، ثم اختر العمود المقابل له في القالب أو أنشئ عموداً جديداً.</p>
+            </div>
+            <button class="btn-ghost" id="selAll">تحديد الكل</button>
+            <button class="btn-ghost" id="selNone">إلغاء الكل</button>
+            <span class="badge" id="selCount">0 محدّد</span>
+          </div>
+
+          <div class="fields mt-4">
+            <div class="fields-head">
+              <span style="width:26px"></span>
+              <span>العمود في ملف البيانات</span>
+              <span></span>
+              <span>العمود في القالب</span>
+            </div>
+            <div class="fields-body" id="fieldsBody"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="card-title">خيارات المطابقة</p>
+          <p class="card-note">تُطبَّق على المقارنة بين قيم المفتاح في الملفين.</p>
+          <div class="opt-grid mt-2">
+            <div>
+              <div class="opt-row">
+                <input type="checkbox" class="cbx" id="optSpaces" checked>
+                <div><p class="opt-t">تجاهل المسافات الزائدة</p><p class="opt-s">«أحمد  علي » تساوي «أحمد علي»</p></div>
+              </div>
+              <div class="opt-row">
+                <input type="checkbox" class="cbx" id="optCase" checked>
+                <div><p class="opt-t">تجاهل حالة الأحرف</p><p class="opt-s">A-1001 تساوي a-1001</p></div>
+              </div>
+              <div class="opt-row">
+                <input type="checkbox" class="cbx" id="optArabic" checked>
+                <div><p class="opt-t">تطبيع الحروف العربية</p><p class="opt-s">أ إ آ ← ا ، ة ← ه ، ى ← ي ، الأرقام العربية ← ‎123</p></div>
+              </div>
+            </div>
+            <div>
+              <div class="opt-row">
+                <input type="checkbox" class="cbx" id="optZeros">
+                <div><p class="opt-t">تجاهل الأصفار البادئة</p><p class="opt-s">00123 تساوي 123 — مفيد لأكواد تصدّر كأرقام</p></div>
+              </div>
+              <div class="opt-row tall">
+                <div class="flex-1">
+                  <label class="fld" for="dupMode">عند تكرار المفتاح في ملف البيانات
+                    <span class="sub">أي صف يُعتمد عند وجود أكثر من صف بنفس القيمة</span>
+                  </label>
+                  <select class="input" id="dupMode">
+                    <option value="first">أول صف مطابق</option>
+                    <option value="last">آخر صف مطابق</option>
+                  </select>
+                </div>
+              </div>
+              <div class="opt-row">
+                <input type="checkbox" class="cbx" id="optAppend" checked>
+                <div><p class="opt-t">إضافة الحالات الزائدة عن سعة القالب</p><p class="opt-s">بالترتيب: يُوزَّع الفائض حسب خيار «عند تجاوز سعة النموذج» أدناه — وبالمفتاح: كل قيمة بلا صف مقابل تُضاف كصف جديد في موضع الإدراج المحدَّد</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="card-title">تنظيف اسم الطالب — حذف اللقب/العشيرة</p>
+          <p class="card-note">تُطبَّق المعالجة على عمود الاسم لحظة نقله إلى القالب فقط؛ ملف البيانات الأصلي لا يتغيّر.</p>
+          <div class="opt-grid mt-2">
+            <div>
+              <div class="opt-row tall">
+                <div class="flex-1">
+                  <label class="fld" for="nameCol">عمود الاسم في القالب
+                    <span class="sub">العمود الذي يُنقل إليه اسم الطالب — «تلقائي» يكتشف عمود «اسم الطالب» بنفسه</span>
+                  </label>
+                  <select class="input" id="nameCol"></select>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="opt-row tall">
+                <div class="flex-1">
+                  <label class="fld" for="nameMode">طريقة التنظيف
+                    <span class="sub">«تلقائياً» يحذف الكلمة الأخيرة إذا كانت لقباً أو عشيرة (تبدأ بـ «ال») ويُبقي الأسماء الثلاثية/الرباعية سليمة</span>
+                  </label>
+                  <select class="input" id="nameMode">
+                    <option value="autoTribal" selected>حذف اللقب/العشيرة تلقائياً — الكلمة الأخيرة التي تبدأ بـ «ال»</option>
+                    <option value="dropLast">حذف الكلمة الأخيرة دائماً</option>
+                    <option value="first3">الاحتفاظ بأول 3 كلمات (الاسم الثلاثي)</option>
+                    <option value="first4">الاحتفاظ بأول 4 كلمات (الاسم الرباعي)</option>
+                    <option value="off">بدون حذف — تنظيف المسافات فقط</option>
+                  </select>
+                </div>
+              </div>
+              <p class="card-note mt-1" id="namePreview"></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <p class="card-title">خيارات النموذج</p>
+          <p class="card-note">تخصّ شكل الملف المطلوب ملؤه (النموذج الثابت) — تُطبَّق عند إضافة صفوف جديدة.</p>
+          <div class="opt-grid mt-2">
+            <div>
+              <div class="opt-row tall">
+                <div class="flex-1">
+                  <label class="fld" for="fillMode">طريقة تعبئة الصفوف
+                    <span class="sub">«بالمفتاح» يطابق صفوف القالب مع ملف البيانات عبر عمود المفتاح أعلاه — «بالترتيب» يملأ الصفوف الفارغة في النموذج من بداية ملف البيانات دون مطابقة</span>
+                  </label>
+                  <select class="input" id="fillMode">
+                    <option value="key">بالمفتاح (تطابق مباشر)</option>
+                    <option value="order" selected>بالترتيب (نموذج فراغ بلا مفاتيح)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="opt-row tall">
+                <div class="flex-1">
+                  <label class="fld" for="insertMode">موضع الصفوف الجديدة
+                    <span class="sub">«تلقائياً» يكتشف نهاية جدول النموذج ويُدرج الصفوف قبل تذييله</span>
+                  </label>
+                  <select class="input" id="insertMode">
+                    <option value="auto">تلقائياً — قبل تذييل النموذج (موصى به)</option>
+                    <option value="end">في نهاية ورقة العمل</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="opt-row tall">
+                <div class="flex-1">
+                  <label class="fld" for="sheetsMode">توزيع على أوراق النموذج
+                    <span class="sub">«كل الأوراق» يملأ كل نسخة بالدفعة التالية (بعدد صفوفها) ثم ينتقل للتي تليها — «الورقة الحالية» يكتفي بالورقة المختارة. يُطبَّق مع التعبئة «بالترتيب».</span>
+                  </label>
+                  <select class="input" id="sheetsMode">
+                    <option value="all">كل الأوراق — كل نسخة دفعة</option>
+                    <option value="current">الورقة الحالية فقط</option>
+                  </select>
+                </div>
+              </div>
+              <div class="opt-row tall">
+                <div class="flex-1">
+                  <label class="fld" for="pageMode">عند تجاوز سعة النموذج (بيانات ضخمة)
+                    <span class="sub">«صفحة جديدة لكل دفعة» تُنشئ نسخاً إضافية من النموذج تلقائياً بحيث لا يزيد أي نموذج عن عدد صفوفه (10 طلاب في كل صفحة) — «داخل نفس الورقة» تضيف الفائض صفوفاً أسفل جدول النموذج.</span>
+                  </label>
+                  <select class="input" id="pageMode">
+                    <option value="newpage" selected>صفحة (نسخة) جديدة لكل دفعة — 10 طلاب في كل صفحة</option>
+                    <option value="inline">إضافة الفائض داخل نفس الورقة</option>
+                  </select>
+                </div>
+              </div>
+              <div class="opt-row">
+                <input type="checkbox" class="cbx" id="optNumber" checked>
+                <div><p class="opt-t">ترقيم الصفوف المُضافة تلقائياً</p><p class="opt-s">إذا كان العمود الأول تسلسلاً رقمياً (1، 2، 3…) يُكمل الترقيم في الصفوف الجديدة</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="runbar">
+          <button class="btn" id="runBtn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            تنفيذ المعالجة
+          </button>
+          <span class="hint" id="runHint">لا شيء يُرسل إلى أي سيرفر — كل الحساب يجري في هذا المتصفح.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 03 النتيجة ================= -->
+    <section class="panel" id="panel3">
+      <div class="panel-head">
+        <span class="step-no">03</span>
+        <div>
+          <h2>راجع النتيجة وحمّلها</h2>
+          <p class="lede">تقرير المطابقة ومعاينة للخلايا التي تمت تعبئتها، ثم ملف الإكسل الناتج.</p>
+        </div>
+      </div>
+
+      <div id="resEmpty" class="empty">لم تُنفَّذ المعالجة بعد. اضبط الربط في الخطوة 02 ثم اضغط «تنفيذ المعالجة».</div>
+      <div id="resBody" class="hidden"></div>
+    </section>
+
+  </main>
+</div>
+
+<footer class="site-foot">
+  <div class="wrap py-6">
+    <div class="foot-row">
+      <span>الملفان يُقرآن ويُعالَجان في ذاكرة المتصفح فقط.</span>
+      <span>الملفات المدعومة: xlsx · xls · xlsm · csv</span>
+      <span class="ver">الإصدار <b id="verNo">1.4</b> · آخر تحديث <span id="verText">…</span></span>
+      <span class="dev">تطوير
+        <a href="https://www.facebook.com/xomariq" target="_blank" rel="noopener noreferrer">ENG Omar Ali</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =====================================================================
+     0) أدوات عامة
+     ===================================================================== */
+  const $  = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = (n) => Number(n || 0).toLocaleString('en-US');
+  const colLetter = (i) => (window.XLSX ? XLSX.utils.encode_col(i) : String.fromCharCode(65 + (i % 26)));
+  const fmtCell = (v) => {
+    if (v == null) return '';
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    if (typeof v === 'number') return String(v);
+    return String(v);
+  };
+
+  /* =====================================================================
+     1) تنبيهات المستخدم
+     ===================================================================== */
+  function toast(message, type, ms) {
+    const box = $('#toasts');
+    const el = document.createElement('div');
+    el.className = 'toast toast-' + (type || 'info');
+    el.innerHTML = '<span class="toast-dot"></span><p>' + esc(message) + '</p><button class="toast-x" aria-label="إغلاق">✕</button>';
+    box.appendChild(el);
+    const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 220); };
+    el.querySelector('.toast-x').addEventListener('click', close);
+    setTimeout(close, ms || (type === 'error' ? 9000 : 5200));
+  }
+
+  /* =====================================================================
+     2) تطبيع قيم المفاتيح
+     ===================================================================== */
+  function normalizeArabic(s) {
+    return s
+      .replace(/[\u064B-\u065F\u0670\u0640]/g, '')   // تشكيل + تطويل
+      .replace(/[\u0623\u0625\u0622\u0671]/g, '\u0627') // أ إ آ ٱ ← ا
+      .replace(/\u0649/g, '\u064A')                  // ى ← ي
+      .replace(/\u0624/g, '\u0648')                  // ؤ ← و
+      .replace(/\u0626/g, '\u064A')                  // ئ ← ي
+      .replace(/\u0629/g, '\u0647')                  // ة ← ه
+      .replace(/[\u0660-\u0669]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0x0660 + 48));
+  }
+
+  function normKey(value, o) {
+    if (value == null) return '';
+    let s;
+    if (value instanceof Date) s = value.toISOString().slice(0, 10);
+    else if (typeof value === 'boolean') s = value ? 'نعم' : 'لا';
+    else s = String(value);
+
+    s = s.trim();
+    if (o.normSpaces) s = s.replace(/\s+/g, ' ');
+    if (o.normArabic) s = normalizeArabic(s);
+    if (o.normCase) s = s.toLowerCase();
+    if (o.normLeadingZeros) s = s.replace(/^0+(?=\d)/, '');
+    return s;
+  }
+
+  const normHeader = (h) => String(h == null ? '' : h).trim().replace(/\s+/g, ' ').toLowerCase();
+
+  /* =====================================================================
+     2ب) تنظيف اسم الطالب — حذف اللقب/العشيرة
+     ===================================================================== */
+
+  // كلمات لا تُحذف إذا جاءت بعد «عبد» (أسماء مركّبة: عبد الله · عبد الرحمن · عبد الكريم …)
+  const NAME_COMPOUND_TAIL = /^ال(له|رحمن|رحيم|كريم|حسين|حسن|زهراء|رضا|مهدي|كاظم|حكيم|غفار|جبار|صمد|هادي|ستار|وهاب|مجيد|فتاح|رزاق|خالق|ودود|قادر|سميع|بصير|حميد|عزيز|علي|عباس|أمير|امير|نبي|رسول)$/;
+
+  // كلمات رابطة تقع قبل اللقب/العشيرة فتُحذف معه («آل سالم» · «البو هادي» · «ال عزيز» · «بن داود»)
+  const TRIBAL_LINK = /^(آل|أل|ال|بن|بنت|بني|ابن|البو|أبو|ابو)$/;
+
+  // صيغ اللقب/العشيرة الشائعة التي تُحذف من آخر الاسم (أغلبها يبدأ بـ «ال»)
+  const TRIBAL_RE = /^(ال[\u0621-\u064A\u0671-\u06D3]{2,}|آل|أل|بن|بنت|بني|ابن|البو|عشيرة|العشيرة|قبيلة|القبيلة|الشيخ|شيخ|السيد|سيد|الملا|ملا|الحاج|الحاجة)$/;
+
+  function isTribalTail(last, prev) {
+    return tribalDropCount(last, prev) > 0;
+  }
+
+  // كم كلمة تُحذف من آخر الاسم؟ 0 = لا شيء · 1 = الكلمة الأخيرة · 2 = آخر كلمتين («آل سالم» · «بن داود»)
+  function tribalDropCount(last, prev) {
+    if (!last) return 0;
+    // اسم مركّب: «عبد الله» · «عبد الكريم» → لا يُحذف (لكن «عبد الكروشي» تُحذف عشيرته)
+    if (prev && /^عبد(ال)?$/.test(prev) && NAME_COMPOUND_TAIL.test(last)) return 0;
+    if (/^عبدال/.test(last)) return 0;                                   // «عبدالله» كلمة واحدة
+    // «الله» و«الدين» لا تكونان لقباً/عشيرة أبداً → لا تُحذفان (عطا الله · نور الدين …)
+    if (last === 'الله' || last === 'الدين') return 0;
+    if (prev && TRIBAL_LINK.test(prev)) return 2;
+    return TRIBAL_RE.test(last) ? 1 : 0;
+  }
+
+  // الدالة الرئيسة: تُنظّف نص اسم الطالب حسب الخيار المختار
+  // mode: off | dropLast | first3 | first4 | autoTribal
+  function cleanName(v, mode) {
+    if (v == null) return v;
+    if (typeof v === 'number' || v instanceof Date) return v;
+    let s = String(v).replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '');
+    s = s.replace(/\s+/g, ' ').trim();          // حذف الفراغات الزائدة
+    if (!s) return s;
+    if (!mode || mode === 'off') return s;
+    if (!/[\u0621-\u06D3]/.test(s)) return s;    // لا يحتوي حروفاً عربية → يُترك كما هو
+    const parts = s.split(' ').filter(Boolean);
+    if (parts.length < 2) return s;              // كلمة واحدة → لا شيء يُحذف
+    switch (mode) {
+      case 'dropLast': return parts.slice(0, -1).join(' ');        // حذف الكلمة الأخيرة دائماً
+      case 'first3':   return parts.slice(0, 3).join(' ');         // أول 3 كلمات (ثلاثي)
+      case 'first4':   return parts.slice(0, 4).join(' ');         // أول 4 كلمات (رباعي)
+      case 'autoTribal': {
+        const last = parts[parts.length - 1], prev = parts[parts.length - 2];
+        const d = tribalDropCount(last, prev);
+        return (d && parts.length - d >= 1) ? parts.slice(0, -d).join(' ') : s;
+      }
+      default: return s;
+    }
+  }
+
+  // عمود الاسم في القالب: يدوي إن اختاره المستخدم، وإلا يُكتشف تلقائياً من العنوان
+  function autoNameCol() {
+    const T = state.files.target;
+    if (!T) return null;
+    let best = null, bestScore = 0;
+    T.headers.forEach((h, i) => {
+      const n = normHeader(h);
+      let sc = 0;
+      if (/طالب|طالبة|تلميذ|تلميذة/.test(n)) sc = 3;
+      else if (/^(ال)?(اسم|إسم)( (ال)?(كامل|رباعي|ثلاثي))?$/.test(n)) sc = 2;
+      if (sc > bestScore) { bestScore = sc; best = i; }
+    });
+    return best;
+  }
+
+  function nameColumnIndex() {
+    return state.nameCol != null ? state.nameCol : autoNameCol();
+  }
+
+  /* =====================================================================
+     3) الحالة
+     ===================================================================== */
+  const state = {
+    files: { source: null, target: null },
+    mapping: { srcKey: null, tgtKey: null },
+    fields: [],
+    opts: { normSpaces: true, normCase: true, normArabic: true, normLeadingZeros: false },
+    dupMode: 'first',
+    appendUnmatched: true,
+    fillMode: 'order',
+    insertMode: 'auto',
+    sheetsMode: 'all',
+    pageMode: 'newpage',
+    autoNumber: true,
+    nameMode: 'autoTribal',
+    nameCol: null,
+    result: null,
+    stale: false
+  };
+
+  const FILE_CFG = [
+    { kind: 'source', label: 'ملف البيانات الضخمة', drop: '#srcDrop', input: '#srcInput', meta: '#srcMeta' },
+    { kind: 'target', label: 'ملف القالب',          drop: '#tgtDrop', input: '#tgtInput', meta: '#tgtMeta' }
+  ];
+
+  /* =====================================================================
+     4) قراءة ورقة وتفكيكها إلى شبكة
+     ===================================================================== */
+  function isEmptyRow(row) {
+    if (!row) return true;
+    for (let i = 0; i < row.length; i++) {
+      const v = row[i];
+      if (v != null && String(v).trim() !== '') return false;
+    }
+    return true;
+  }
+
+  // قيمة خلية واحدة — آمنة ضد التواريخ غير الصالحة وخلايا الخطأ
+  function cellValue(cell) {
+    if (!cell || cell.t === 'z' || cell.v === undefined) return null;
+    const v = cell.v;
+    if (v instanceof Date) {
+      if (isNaN(v.getTime())) return (typeof cell.w === 'string' && cell.w) ? cell.w : null;
+      return v;
+    }
+    if (cell.t === 'e') return (typeof cell.w === 'string' && cell.w) ? cell.w : null;
+    return v;
+  }
+
+  // قراءة الورقة إلى شبكة اعتماداً على !ref — تحفظ مواضع الصفوف كما هي في الملف
+  function sheetToAoa(ws) {
+    const ref = ws && ws['!ref'];
+    if (!ref) return [];
+    const range = XLSX.utils.decode_range(ref);
+    const aoa = [];
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const row = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        row.push(cellValue(ws[XLSX.utils.encode_cell({ r: r, c: c })]));
+      }
+      aoa.push(row);
+    }
+    return aoa;
+  }
+
+  // تخمين صف العناوين: الصف الأول إن كان ترويسة واضحة، وإلا أوسع صف بين أول 15 صفاً
+  function guessHeaderRow(aoa) {
+    const first = aoa[0] || [];
+    let filled = 0, textCells = 0;
+    for (let i = 0; i < first.length; i++) {
+      const v = first[i];
+      if (v == null || String(v).trim() === '') continue;
+      filled++;
+      if (typeof v === 'string' && isNaN(Number(v))) textCells++;
+    }
+    if (filled >= 2 && textCells >= 1) return 1;
+
+    let best = 1, bestCount = 0;
+    const n = Math.min(aoa.length, 15);
+    for (let r = 0; r < n; r++) {
+      const row = aoa[r] || [];
+      let c = 0;
+      for (let i = 0; i < row.length; i++) {
+        const v = row[i];
+        if (v != null && String(v).trim() !== '') c++;
+      }
+      if (c > bestCount) { bestCount = c; best = r + 1; }
+    }
+    return bestCount >= 2 ? best : 1;
+  }
+
+  function parseSheet(wb, sheetName, headerRowNo) {
+    const ws = wb && wb.Sheets ? wb.Sheets[sheetName] : null;
+    if (!ws || !ws['!ref']) return { error: 'الورقة «' + sheetName + '» فارغة أو لا تحتوي على بيانات.' };
+
+    let aoa;
+    try {
+      aoa = sheetToAoa(ws);
+    } catch (e) {
+      return { error: 'تعذّرت قراءة الورقة: ' + e.message };
+    }
+    if (!aoa.length || aoa.every(isEmptyRow)) return { error: 'الورقة «' + sheetName + '» لا تحتوي على بيانات.' };
+
+    const auto = !headerRowNo || headerRowNo < 1;
+    const hr = auto
+      ? Math.min(guessHeaderRow(aoa) - 1, aoa.length - 1)
+      : Math.max(0, Math.min(headerRowNo - 1, aoa.length - 1));
+    if (hr >= aoa.length) return { error: 'رقم صف العناوين أكبر من عدد الصفوف المتاحة.' };
+
+    const headerArr = aoa[hr] || [];
+    let width = headerArr.length;
+    for (let r = 0; r < aoa.length; r++) if (aoa[r] && aoa[r].length > width) width = aoa[r].length;
+    if (!width) return { error: 'لم يُعثر على أي أعمدة في صف العناوين.' };
+
+    const headers = [];
+    for (let c = 0; c < width; c++) {
+      const v = headerArr[c];
+      const s = v == null ? '' : String(v).trim();
+      headers.push(s || ('عمود ' + colLetter(c)));
+    }
+
+    let end = aoa.length;
+    while (end > hr + 1 && isEmptyRow(aoa[end - 1])) end--;
+    const rows = aoa.slice(hr + 1, end);
+
+    return {
+      grid: aoa, headers: headers, width: width, headerIndex: hr, dataStart: hr + 1,
+      rows: rows, lastRow: end, autoHeader: auto && hr > 0
+    };
+  }
+
+  /* =====================================================================
+     5) تحميل الملفات
+     ===================================================================== */
+  async function readWorkbook(file, wantStyles) {
+    const isCsv = /\.(csv|txt)$/i.test(file.name);
+    const opts = { cellDates: true };
+    if (wantStyles) opts.cellStyles = true;
+    if (isCsv) {
+      const text = await file.text();
+      return { wb: XLSX.read(text, Object.assign({ type: 'string', raw: false }, opts)), bytes: null };
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    opts.type = 'array';
+    return { wb: XLSX.read(bytes, opts), bytes: bytes };
+  }
+
+  async function handleFile(kind, file) {
+    if (!file) return;
+    if (!/\.(xlsx|xls|xlsm|csv|txt)$/i.test(file.name)) {
+      toast('صيغة الملف «' + file.name + '» غير مدعومة. استخدم xlsx أو xls أو xlsm أو csv.', 'error');
+      return;
+    }
+    try {
+      // أنماط الخلايا تُقرأ للقالب فقط (نحافظ بها على تنسيق النموذج عند الكتابة)
+      const loaded = await readWorkbook(file, kind === 'target');
+      const wb = loaded.wb;
+      const sheets = (wb.SheetNames || []).filter((n) => !!wb.Sheets[n]);
+      if (!sheets.length) { toast('الملف «' + file.name + '» لا يحتوي على أي ورقة عمل.', 'error'); return; }
+
+      state.files[kind] = {
+        file: file,
+        wb: wb,
+        bytes: loaded.bytes,
+        sheetNames: sheets,
+        sheet: sheets[0],
+        headerRow: 0, // 0 = اكتشاف تلقائي لصف العناوين
+        headers: [], rows: [], width: 0, grid: [], headerIndex: 0, dataStart: 1,
+        lastRow: 0, autoHeader: false
+      };
+      let ok = reparse(kind);
+      if (!ok) {
+        // بعض النماذج تبدأ بورقة فارغة — ابحث عن أول ورقة قابلة للقراءة
+        for (let i = 1; i < sheets.length && !ok; i++) {
+          const f = state.files[kind];
+          f.sheet = sheets[i];
+          const p = parseSheet(wb, sheets[i], 0);
+          if (p.error) continue;
+          ok = reparse(kind, true);
+          if (ok) toast('الورقة «' + sheets[0] + '» فارغة — اختيرت الورقة «' + sheets[i] + '» تلقائياً.', 'info');
+        }
+      }
+      if (!ok) { state.files[kind] = null; render(); return; }
+      const f = state.files[kind];
+      toast('تم تحميل «' + file.name + '» — ' + num(f.rows.length) + ' صفاً و ' +
+            num(f.headers.length) + ' عموداً.', 'success');
+      if (f.autoHeader) {
+        toast('تم اكتشاف صف العناوين تلقائياً في الصف ' + num(f.headerIndex + 1) + '. عدّله إن لزم.', 'info');
+      }
+      onDataChanged();
+    } catch (e) {
+      toast('تعذّر قراءة الملف «' + file.name + '». تأكد أنه ملف إكسل سليم. (' + e.message + ')', 'error');
+    }
+  }
+
+  function reparse(kind, quiet) {
+    const f = state.files[kind];
+    if (!f) return false;
+    const p = parseSheet(f.wb, f.sheet, f.headerRow);
+    if (p.error) { if (!quiet) toast(cfgLabel(kind) + ': ' + p.error, 'error'); return false; }
+    f.headers = p.headers; f.rows = p.rows; f.width = p.width;
+    f.grid = p.grid; f.headerIndex = p.headerIndex; f.dataStart = p.dataStart;
+    f.lastRow = p.lastRow; f.autoHeader = p.autoHeader;
+    f.headerRow = p.headerIndex + 1; // الرقم المعروض في الواجهة
+    return true;
+  }
+  const cfgLabel = (kind) => (kind === 'source' ? 'ملف البيانات' : 'ملف القالب');
+
+  function onDataChanged() {
+    // إعادة ضبط المطابقة واقتراح ربط تلقائي جديد
+    state.result = null; state.stale = false;
+    if (state.files.source && state.files.target) {
+      autoSuggest();
+    } else {
+      state.mapping = { srcKey: null, tgtKey: null };
+      state.fields = [];
+    }
+    render();
+  }
+
+  /* =====================================================================
+     6) الاقتراح التلقائي للربط
+     ===================================================================== */
+
+  // الربط الجاهز للنموذج الثابت «صحة صدور القانون المرحلة الثانية»
+  // كل عنصر: اسم عمود القالب ← الأسماء المرشحة لعمود ملف البيانات (بالأولوية)
+  const FORM_PROFILE = [
+    { t: 'اسم الطالب',    s: ['اسم الطالب'] },
+    { t: 'اسم المدرسة',   s: ['إسم المدرسة', 'اسم المدرسة'] },
+    { t: 'اسم المديرية',  s: ['المديرية'] },
+    { t: 'عدد الوثيقة',   s: ['رقم الوثيقة'] },
+    { t: 'تاريخ إصدارها', s: ['تاريخ الوثيقة'] },
+    { t: 'العام الدراسي', s: ['سنة التخرج من الاعدادية'] },
+    { t: 'الفرع',         s: ['فرع التخرج الثانوي'] },
+    { t: 'الدور',         s: ['الدور'] }
+  ];
+  const FORM_KEY = { t: 'عدد الوثيقة', s: 'رقم الوثيقة' };
+
+  function autoSuggest() {
+    const S = state.files.source, T = state.files.target;
+    const tIdx = new Map();
+    T.headers.forEach((h, i) => { const k = normHeader(h); if (!tIdx.has(k)) tIdx.set(k, i); });
+    const sIdx = new Map();
+    S.headers.forEach((h, i) => { const k = normHeader(h); if (!sIdx.has(k)) sIdx.set(k, i); });
+
+    // 0) الربط الجاهز للنموذج الثابت (يتقدّم على المطابقة العامة بالاسم)
+    const profile = new Map(); // فهرس عمود المصدر ← فهرس عمود القالب
+    let profCount = 0;
+    FORM_PROFILE.forEach((pr) => {
+      const j = tIdx.get(normHeader(pr.t));
+      if (j === undefined) return;
+      for (const cand of pr.s) {
+        const i = sIdx.get(normHeader(cand));
+        if (i !== undefined && !profile.has(i)) { profile.set(i, j); profCount++; return; }
+      }
+    });
+
+    // 1) عمود المفتاح: من الربط الجاهز إن وُجد، وإلا أول اسم متطابق مع ترجيح الأسماء المألوفة
+    let key = null;
+    const ki = sIdx.get(normHeader(FORM_KEY.s)), kj = tIdx.get(normHeader(FORM_KEY.t));
+    if (ki !== undefined && kj !== undefined) key = { i: ki, j: kj, h: S.headers[ki] };
+    if (!key) {
+      const pairs = [];
+      S.headers.forEach((h, i) => {
+        const j = tIdx.get(normHeader(h));
+        if (j !== undefined) pairs.push({ i: i, j: j, h: h });
+      });
+      if (pairs.length) {
+        const kw = ['كود', 'رمز', 'معرف', 'رقم', 'مفتاح', 'هوي', 'سجل', 'حساب', 'id', 'code', 'key', 'no', 'account'];
+        const scored = pairs.map((p) => ({ p: p, s: kw.some((k) => p.h.toLowerCase().indexOf(k) !== -1) ? 2 : 1 }));
+        scored.sort((a, b) => b.s - a.s);
+        key = scored[0].p;
+      } else {
+        key = { i: 0, j: 0, h: S.headers[0] };
+      }
+    }
+    state.mapping.srcKey = key.i;
+    state.mapping.tgtKey = key.j;
+
+    // 2) الحقول: الربط الجاهز أولاً، ثم كل عمود في المصدر له اسم مطابق في القالب
+    state.fields = S.headers.map((h, i) => {
+      const j = profile.has(i) ? profile.get(i) : tIdx.get(normHeader(h));
+      const matched = j !== undefined;
+      return {
+        srcIndex: i,
+        enabled: matched,
+        target: matched ? String(j) : '__new__',
+        newName: h
+      };
+    });
+
+    const autoCount = state.fields.filter((f) => f.enabled).length;
+    const toastMsg = profCount
+      ? 'تم تجهيز ربط النموذج تلقائياً: المفتاح «' + key.h + '» و ' + num(autoCount) + ' حقلاً (' + num(profCount) + ' من الربط الجاهز) — يمكنك تعديل كل شيء.'
+      : 'تم اقتراح الربط تلقائياً: المفتاح «' + key.h + '» و ' + num(autoCount) + ' حقلاً متطابقاً بالاسم. يمكنك تعديل كل شيء.';
+    toast(toastMsg, 'info', 6500);
+  }
+
+  /* =====================================================================
+     7) الرسم
+     ===================================================================== */
+  function render() {
+    FILE_CFG.forEach(renderFile);
+    renderRail();
+    renderMapping();
+    renderNameCol();
+    renderNamePreview();
+    renderResult();
+  }
+
+  function renderFile(cfg) {
+    const f = state.files[cfg.kind];
+    const dropEl = $(cfg.drop), metaEl = $(cfg.meta);
+
+    if (!f) {
+      dropEl.classList.remove('hidden');
+      metaEl.classList.add('hidden');
+      metaEl.innerHTML = '';
+      return;
+    }
+    dropEl.classList.add('hidden');
+    metaEl.classList.remove('hidden');
+
+    const sheetOpts = f.sheetNames.map((n) =>
+      '<option value="' + esc(n) + '"' + (n === f.sheet ? ' selected' : '') + '>' + esc(n) + '</option>').join('');
+
+    const chips = f.headers.slice(0, 10).map((h, i) =>
+      '<span class="chip" title="' + esc(h) + '"><span class="cl">' + colLetter(i) + '</span>' + esc(h) + '</span>').join('');
+    const more = f.headers.length > 10 ? '<span class="chip more">+' + num(f.headers.length - 10) + ' عموداً آخر</span>' : '';
+
+    metaEl.innerHTML =
+      '<div class="flex items-center gap-3 mt-1">' +
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0A6B4A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>' +
+        '<span class="flex-1 min-w-0 text-[13.5px] font-semibold truncate" title="' + esc(f.file.name) + '">' + esc(f.file.name) + '</span>' +
+        '<button class="btn-ghost" data-act="replace">استبدال</button>' +
+      '</div>' +
+      '<p class="card-note mt-1"><span class="mono">' + num(f.rows.length) + '</span> صف · <span class="mono">' +
+        num(f.headers.length) + '</span> عمود</p>' +
+      '<div class="grid grid-cols-2 gap-3 mt-4">' +
+        '<label class="fld">ورقة العمل<select class="input" data-act="sheet">' + sheetOpts + '</select></label>' +
+        '<label class="fld">صف العناوين<input type="number" class="input" min="1" max="' + f.grid.length +
+          '" value="' + f.headerRow + '" data-act="hrow"></label>' +
+      '</div>' +
+      '<div class="colchips">' + chips + more + '</div>';
+
+    metaEl.querySelector('[data-act="replace"]').addEventListener('click', () => $(cfg.input).click());
+    metaEl.querySelector('[data-act="sheet"]').addEventListener('change', (e) => {
+      f.sheet = e.target.value;
+      f.headerRow = 0; // أعد اكتشاف صف العناوين للورقة الجديدة
+      if (reparse(cfg.kind)) {
+        toast('تم تبديل الورقة إلى «' + f.sheet + '»' + (f.autoHeader ? ' — صف العناوين: ' + num(f.headerIndex + 1) : '') + '.', 'info');
+        onDataChanged();
+      }
+    });
+    metaEl.querySelector('[data-act="hrow"]').addEventListener('change', (e) => {
+      const v = Math.max(1, parseInt(e.target.value || '1', 10) || 1);
+      f.headerRow = v;
+      if (reparse(cfg.kind)) { toast('تم اعتماد الصف ' + v + ' كصف عناوين.', 'info'); onDataChanged(); }
+      else renderFile(cfg);
+    });
+  }
+
+  function renderRail() {
+    const filesBox = $('#railFiles');
+    const items = [];
+    FILE_CFG.forEach((c) => {
+      const f = state.files[c.kind];
+      if (!f) return;
+      items.push('<div class="rail-file"><b title="' + esc(f.file.name) + '">' + esc(f.file.name) + '</b>' +
+        '<span>' + num(f.rows.length) + ' صف × ' + num(f.headers.length) + ' عمود</span></div>');
+    });
+    filesBox.innerHTML = items.length ? items.join('') : '<p class="rail-file" style="border-bottom:1px solid var(--line)"><span>لا ملفات بعد</span></p>';
+
+    const both = !!(state.files.source && state.files.target);
+    const done = !!state.result && !state.stale;
+    const map = [
+      { s: 1, state: both ? 'is-done' : 'is-active' },
+      { s: 2, state: done ? 'is-done' : (both ? 'is-active' : '') },
+      { s: 3, state: done ? 'is-active' : '' }
+    ];
+    $$('#stepsRail li').forEach((li) => {
+      const m = map.find((x) => String(x.s) === li.getAttribute('data-step'));
+      li.classList.remove('is-active', 'is-done');
+      if (m && m.state) li.classList.add(m.state);
+    });
+  }
+
+  function renderNameCol() {
+    const sel = $('#nameCol'); if (!sel) return;
+    const T = state.files.target;
+    if (!T) {
+      sel.disabled = true;
+      sel.innerHTML = '<option value="__auto__">تلقائي — حمّل ملف القالب أولاً</option>';
+      return;
+    }
+    sel.disabled = false;
+    const auto = autoNameCol();
+    const autoLabel = auto == null
+      ? 'تلقائي — لم يُعثر على عمود اسم واضح'
+      : 'تلقائي — ' + colLetter(auto) + ' «' + esc(T.headers[auto]) + '»';
+    sel.innerHTML =
+      '<option value="__auto__"' + (state.nameCol == null ? ' selected' : '') + '>' + autoLabel + '</option>' +
+      T.headers.map((h, i) =>
+        '<option value="' + i + '"' + (state.nameCol === i ? ' selected' : '') + '>يدوي: ' + colLetter(i) + ' — ' + esc(h) + '</option>').join('');
+  }
+
+  function renderNamePreview() {
+    const box = $('#namePreview'); if (!box) return;
+    const mode = state.nameMode;
+    if (mode === 'off') {
+      box.innerHTML = 'لن يُحذف شيء — يُنظَّف الاسم من الفراغات الزائدة فقط.';
+      return;
+    }
+    let sample = null;
+    const S = state.files.source, T = state.files.target;
+    if (S && T) {
+      const nt = nameColumnIndex();
+      const col = resolveTargets().cols.find((c) => c.tgtIndex === nt);
+      if (col) {
+        for (let r = 0; r < S.rows.length; r++) {
+          const v = S.rows[r] ? S.rows[r][col.srcIndex] : null;
+          if (v != null && String(v).trim() !== '') { sample = String(v); break; }
+        }
+      }
+    }
+    if (sample == null) sample = 'حيدر جبار كريم الكعبي';
+    box.innerHTML = 'مثال: <span class="mono">' + esc(sample) + '</span> ← <b class="mono">' + esc(cleanName(sample, mode)) + '</b>';
+  }
+
+  function renderMapping() {
+    const S = state.files.source, T = state.files.target;
+    const ready = !!(S && T);
+    $('#mapEmpty').classList.toggle('hidden', ready);
+    $('#mapBody').classList.toggle('hidden', !ready);
+    $('#mapFlag').textContent = ready ? (num(S.headers.length) + ' عموداً ← ' + num(T.headers.length) + ' عموداً') : '';
+    if (!ready) {
+      $('#srcKey').innerHTML = '';
+      $('#tgtKey').innerHTML = '';
+      $('#fieldsBody').innerHTML = '';
+      $('#keyCheck').innerHTML = '';
+      $('#selCount').textContent = '0 محدّد';
+      return;
+    }
+
+    const srcSel = $('#srcKey'), tgtSel = $('#tgtKey');
+    srcSel.innerHTML = S.headers.map((h, i) =>
+      '<option value="' + i + '"' + (state.mapping.srcKey === i ? ' selected' : '') + '>' + colLetter(i) + ' — ' + esc(h) + '</option>').join('');
+    tgtSel.innerHTML = T.headers.map((h, i) =>
+      '<option value="' + i + '"' + (state.mapping.tgtKey === i ? ' selected' : '') + '>' + colLetter(i) + ' — ' + esc(h) + '</option>').join('');
+
+    renderFields();
+    renderKeyCheck();
+  }
+
+  function renderFields() {
+    const S = state.files.source, T = state.files.target;
+    const body = $('#fieldsBody');
+    const tgtOptions = T.headers.map((h, i) => ({ v: String(i), t: colLetter(i) + ' — ' + h }));
+
+    body.innerHTML = state.fields.map((f, k) => {
+      const on = f.enabled;
+      const opts = tgtOptions.map((o) => '<option value="' + o.v + '"' + (f.target === o.v ? ' selected' : '') + '>' + esc(o.t) + '</option>').join('')
+        + '<option value="__new__"' + (f.target === '__new__' ? ' selected' : '') + '>＋ إنشاء عمود جديد</option>';
+      return '' +
+        '<div class="field-row' + (on ? ' on' : '') + '" data-k="' + k + '">' +
+          '<input type="checkbox" class="cbx" data-act="enable"' + (on ? ' checked' : '') + ' aria-label="نقل العمود ' + esc(S.headers[f.srcIndex]) + '">' +
+          '<div class="min-w-0"><div class="fname' + (on ? '' : ' fvanish') + '" title="' + esc(S.headers[f.srcIndex]) + '">' + esc(S.headers[f.srcIndex]) + '</div>' +
+            '<div class="fletter">' + colLetter(f.srcIndex) + '</div></div>' +
+          '<div class="farrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg></div>' +
+          '<div class="field-tgt' + (on ? '' : ' fvanish') + '">' +
+            '<select class="input" data-act="target" style="margin-top:0;font-size:12.5px;padding:6px 10px;padding-inline-start:28px">' + opts + '</select>' +
+            '<input type="text" class="input newcol" data-act="newname" placeholder="اسم العمود الجديد" value="' + esc(f.newName || '') + '"' + (on && f.target === '__new__' ? '' : ' hidden') + '>' +
+          '</div>' +
+        '</div>';
+    }).join('');
+
+    body.querySelectorAll('.field-row').forEach((row) => {
+      const k = parseInt(row.getAttribute('data-k'), 10);
+      const f = state.fields[k];
+
+      row.querySelector('[data-act="enable"]').addEventListener('change', (e) => {
+        f.enabled = e.target.checked;
+        row.classList.toggle('on', f.enabled);
+        renderFields(); markStale();
+      });
+      row.querySelector('[data-act="target"]').addEventListener('change', (e) => {
+        f.target = e.target.value;
+        renderFields(); markStale();
+      });
+      const nn = row.querySelector('[data-act="newname"]');
+      nn.addEventListener('input', (e) => { f.newName = e.target.value; markStale(); });
+    });
+
+    const selected = state.fields.filter((f) => f.enabled).length;
+    $('#selCount').textContent = num(selected) + ' محدّد';
+  }
+
+  function buildSourceIndex() {
+    const S = state.files.source;
+    const idx = new Map();
+    let duplicates = 0, blank = 0, counted = 0;
+    const keyCol = state.mapping.srcKey;
+    if (keyCol == null) return { idx: idx, duplicates: 0, blank: 0, unique: 0 };
+    for (let r = 0; r < S.rows.length; r++) {
+      const k = normKey(S.rows[r] ? S.rows[r][keyCol] : null, state.opts);
+      if (!k) { blank++; continue; }
+      counted++;
+      if (idx.has(k)) { duplicates++; if (state.dupMode === 'last') idx.set(k, r); }
+      else idx.set(k, r);
+    }
+    return { idx: idx, duplicates: duplicates, blank: blank, unique: idx.size };
+  }
+
+  function renderKeyCheck() {
+    const box = $('#keyCheck');
+    const S = state.files.source, T = state.files.target;
+    if (!S || !T || state.mapping.srcKey == null || state.mapping.tgtKey == null) { box.innerHTML = ''; return; }
+
+    const built = buildSourceIndex();
+    let total = 0, hit = 0, blankTpl = 0;
+    for (let r = 0; r < T.rows.length; r++) {
+      const k = normKey(T.rows[r] ? T.rows[r][state.mapping.tgtKey] : null, state.opts);
+      if (!k) { blankTpl++; continue; }
+      total++;
+      if (built.idx.has(k)) hit++;
+    }
+    const pct = total ? Math.round((hit / total) * 100) : 0;
+    const tail = [];
+    if (blankTpl) tail.push(num(blankTpl) + ' صفاً بلا قيمة مفتاح في القالب');
+    if (built.duplicates) tail.push(num(built.duplicates) + ' مفتاحاً مكرراً في ملف البيانات');
+    box.innerHTML =
+      '<span>سيُطابَق <b>' + num(hit) + '</b> من أصل <b>' + num(total) + '</b> صفاً في القالب (' + pct + '%).</span>' +
+      '<span class="mono" style="color:var(--ink-3)">' + num(built.unique) + ' مفتاحاً فريداً في ملف البيانات</span>' +
+      (tail.length ? '<span style="color:var(--amber)">' + tail.join(' · ') + '</span>' : '');
+  }
+
+  /* =====================================================================
+     8) تنفيذ المعالجة
+     ===================================================================== */
+  function resolveTargets() {
+    const T = state.files.target;
+    const nameToIdx = new Map();
+    T.headers.forEach((h, i) => { const k = normHeader(h); if (!nameToIdx.has(k)) nameToIdx.set(k, i); });
+
+    let nextNew = T.width;
+    const cols = [];
+    for (let i = 0; i < state.fields.length; i++) {
+      const f = state.fields[i];
+      if (!f.enabled) continue;
+      const srcName = state.files.source.headers[f.srcIndex];
+      let idx, name, isNew = false;
+
+      if (f.target === '__new__') {
+        name = String(f.newName || '').trim() || srcName;
+        const existing = nameToIdx.get(normHeader(name));
+        if (existing !== undefined) { idx = existing; }
+        else { idx = nextNew++; isNew = true; nameToIdx.set(normHeader(name), idx); }
+      } else {
+        idx = parseInt(f.target, 10);
+        if (isNaN(idx) || idx < 0 || idx >= T.width) continue;
+        name = T.headers[idx];
+      }
+      cols.push({ srcIndex: f.srcIndex, tgtIndex: idx, isNew: isNew, name: name, srcName: srcName });
+    }
+    return { cols: cols, width: Math.max(nextNew, T.width) };
+  }
+
+  /* ---------------------------------------------------------------------
+     أدوات الكتابة في النموذج: تحافظ على التنسيق والدمج وارتفاعات الصفوف
+     --------------------------------------------------------------------- */
+
+  // كتابة قيمة في خلية مع الحفاظ على نمطها (s) وتنسيقها (z)، أو أخذ نمط مرجعي إن كانت الخلية غير موجودة
+  function setCell(ws, r, c, value, styleSrc) {
+    const addr = XLSX.utils.encode_cell({ r: r, c: c });
+    let cell = ws[addr];
+    const empty = (value === null || value === undefined || value === '');
+    if (!cell) {
+      if (empty) return;
+      cell = ws[addr] = {};
+      if (styleSrc) {
+        if (styleSrc.s) cell.s = styleSrc.s;
+        if (styleSrc.z) cell.z = styleSrc.z;
+      }
+    }
+    if (empty) {
+      delete cell.v; delete cell.w; delete cell.h; delete cell.f; delete cell.r;
+      cell.t = 'z';
+      return;
+    }
+    delete cell.w; delete cell.h; delete cell.f; delete cell.r;
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) { delete cell.v; cell.t = 'z'; return; }
+      cell.t = 'd'; cell.v = value;
+    } else if (typeof value === 'number' && isFinite(value)) {
+      cell.t = 'n'; cell.v = value;
+    } else if (typeof value === 'boolean') {
+      cell.t = 'b'; cell.v = value;
+    } else {
+      cell.t = 's'; cell.v = String(value);
+    }
+  }
+
+  // أقرب خلية في العمود نفسه تحمل نمطاً أو تنسيقاً (للنسخ منه)
+  function stylePick(ws, col, fromRow, minRow) {
+    for (let r = fromRow; r >= (minRow || 0); r--) {
+      const cell = ws[XLSX.utils.encode_cell({ r: r, c: col })];
+      if (cell && (cell.s || cell.z)) return cell;
+    }
+    return null;
+  }
+
+  // إزاحة كل ما يقع عند صف معيّن أو بعده إلى الأسفل (خلايا + دمجات + ارتفاعات + نطاق)
+  function shiftRowsDown(ws, fromRow, by) {
+    if (by <= 0 || fromRow < 0) return;
+    const keys = Object.keys(ws);
+    const moving = [];
+    for (let i = 0; i < keys.length; i++) {
+      const a = keys[i];
+      if (a.charCodeAt(0) === 33) continue; // مفاتيح داخلية مثل !ref
+      const p = XLSX.utils.decode_cell(a);
+      if (p.r >= fromRow) moving.push({ cell: ws[a], from: a, to: XLSX.utils.encode_cell({ r: p.r + by, c: p.c }) });
+    }
+    for (let i = 0; i < moving.length; i++) delete ws[moving[i].from];
+    for (let i = 0; i < moving.length; i++) ws[moving[i].to] = moving[i].cell;
+
+    if (Array.isArray(ws['!merges'])) {
+      ws['!merges'].forEach((mg) => { if (mg.s.r >= fromRow) { mg.s.r += by; mg.e.r += by; } });
+    }
+    if (ws['!autofilter'] && ws['!autofilter'].ref) {
+      const rng = XLSX.utils.decode_range(ws['!autofilter'].ref);
+      if (rng.e.r >= fromRow) { rng.e.r += by; ws['!autofilter'].ref = XLSX.utils.encode_range(rng); }
+    }
+    if (Array.isArray(ws['!rows'])) {
+      const above = ws['!rows'].slice(0, fromRow);
+      const below = ws['!rows'].slice(fromRow);
+      const h = ws['!rows'][fromRow - 1];
+      const grow = new Array(by);
+      for (let i = 0; i < by; i++) grow[i] = h || null;
+      ws['!rows'] = above.concat(grow, below);
+    }
+    if (ws['!ref']) {
+      const rng = XLSX.utils.decode_range(ws['!ref']);
+      rng.e.r += by;
+      ws['!ref'] = XLSX.utils.encode_range(rng);
+    }
+  }
+
+  // إزاحة نطاق الطباعة Print_Area في الأسماء المعرّفة
+  function shiftDefinedNames(wb, sheetName, fromRow, by) {
+    const names = wb && wb.Workbook && wb.Workbook.Names;
+    if (!names || by <= 0) return;
+    const idx = (wb.SheetNames || []).indexOf(sheetName);
+    names.forEach((n) => {
+      if (n.Sheet !== idx || !n.Ref) return;
+      n.Ref = n.Ref.replace(/\$([A-Z]+)\$(\d+)\s*:\s*\$([A-Z]+)\$(\d+)/g, (all, c1, r1, c2, r2) => {
+        const a = parseInt(r1, 10);
+        let b = parseInt(r2, 10);
+        if (b >= fromRow + 1) b += by;
+        return '$' + c1 + '$' + a + ':$' + c2 + '$' + b;
+      });
+    });
+  }
+
+  // موضع إدراج الصفوف الجديدة (0 = قبل هذا الصف) — يكتشف تذييل النموذج
+  function detectInsertRow(targets) {
+    const T = state.files.target;
+    const end = T.lastRow;
+    if (state.insertMode === 'end') return end;
+
+    const candidates = [];
+    const ws = T.wb.Sheets[T.sheet];
+    const merges = (ws && ws['!merges']) || [];
+    let m = Infinity;
+    merges.forEach((mg) => { if (mg.s.r > T.dataStart) m = Math.min(m, mg.s.r); });
+    if (isFinite(m)) candidates.push(m);
+
+    const mapped = new Set(targets.cols.map((c) => c.tgtIndex));
+    if (state.mapping.tgtKey != null) mapped.add(state.mapping.tgtKey);
+    let blanks = 0, b = -1;
+    for (let r = T.dataStart; r < end; r++) {
+      const row = T.grid[r] || [];
+      let nonEmpty = 0, inMapped = 0;
+      for (let c = 0; c < row.length; c++) {
+        const v = row[c];
+        if (v == null || String(v).trim() === '') continue;
+        nonEmpty++;
+        if (mapped.has(c)) inMapped++;
+      }
+      if (nonEmpty === 0 || inMapped === 0) { blanks++; continue; }
+      if (blanks > 0) { b = r; break; }
+    }
+    if (b >= 0) candidates.push(b);
+
+    if (!candidates.length) return end;
+    return Math.max(T.dataStart, Math.min.apply(null, candidates));
+  }
+
+  // آخر رقم في العمود الأول إن كان تسلسلاً رقمياً (لإكمال الترقيم) — يفحص منطقة الجدول فقط
+  function sequenceStart(endRow) {
+    if (!state.autoNumber) return null;
+    const T = state.files.target;
+    let last = null, count = 0;
+    const end = (endRow == null) ? T.lastRow : endRow;
+    for (let r = T.dataStart; r < end; r++) {
+      const v = T.grid[r] ? T.grid[r][0] : null;
+      if (v == null || String(v).trim() === '') continue;
+      if (typeof v === 'number' && isFinite(v)) { last = v; count++; }
+      else return null;
+    }
+    return (last === null || count === 0) ? null : last;
+  }
+
+  /* =====================================================================
+     8b) محرك الحفظ الأمين 100% — الكتابة عبر تحرير ZIP/XML مباشرة
+     يحافظ على الحدود والألوان والخطوط والدمج وارتفاعات الصفوف وهوامش
+     الطباعة كما هي في ملف النموذج الأصلي، بدل إعادة إنشائها بالمكتبة.
+     ===================================================================== */
+
+  function colNum(L) {
+    let n = 0;
+    for (let i = 0; i < L.length; i++) n = n * 26 + (L.charCodeAt(i) - 64);
+    return n;
+  }
+
+  function xmlEscape(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+  }
+
+  // التسلسل الرقمي للتاريخ كما تفهمه إكسيل (يبدأ العد من 1899-12-30)
+  function excelSerial(d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return null;
+    const epoch = Date.UTC(1899, 11, 30);
+    return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()) - epoch) / 86400000);
+  }
+
+  // خريطة تنسيقات الأنماط: فهرس النمط → 1 إن كان تنسيق تاريخ/وقت
+  let _styleFmt = null;
+
+  function parseStyleFormats(stylesXml) {
+    if (!stylesXml) return null;
+    const numFmts = {};
+    const fm = /<numFmt[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g;
+    let m;
+    while ((m = fm.exec(stylesXml)) !== null) {
+      numFmts[m[1]] = m[2].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    }
+    const i0 = stylesXml.indexOf('<cellXfs');
+    const i1 = stylesXml.indexOf('</cellXfs>');
+    const xfList = i0 >= 0 ? stylesXml.slice(i0, i1 < 0 ? undefined : i1).split('<xf').slice(1) : [];
+    const isDateCode = (code) => {
+      if (!code) return false;
+      const c = code.replace(/\[[^\]]*\]/g, '').replace(/"[^"]*"/g, '');
+      return /[ymdhs]/i.test(c) && !/^(general|@|0|#|%)/i.test(code.trim());
+    };
+    const builtinDate = (id) => (id >= 14 && id <= 22) || (id >= 45 && id <= 47) || id === 27 || id === 30 || id === 36 || (id >= 50 && id <= 58);
+    const byS = {};
+    xfList.forEach((s, i) => {
+      const k = s.indexOf('numFmtId="');
+      const id = k < 0 ? 0 : parseInt(s.slice(k + 10, s.indexOf('"', k + 10)), 10);
+      byS[i] = (builtinDate(id) || isDateCode(numFmts[id])) ? 1 : 0;
+    });
+    return byS;
+  }
+
+  // تاريخ كنص بصيغة سنة/شهر/يوم (للخلايا غير المنسّقة كتاريخ)
+  function dateText(d) {
+    return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+  }
+
+  // تمثيل قيمة خلية داخل XML — النصوص inlineStr، والتواريخ رقم تسلسلي إن كانت الخلية منسّقة كتاريخ وإلا نصاً
+  function cellValueXml(value, sIdx) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'string') {
+      const s = String(value);
+      if (s === '') return null;
+      return { t: 'inlineStr', body: '<is><t xml:space="preserve">' + xmlEscape(s) + '</t></is>' };
+    }
+    if (value instanceof Date) {
+      if (isNaN(value.getTime())) return null;
+      if (_styleFmt && _styleFmt[sIdx] === 1) {
+        const ser = excelSerial(value);
+        if (ser === null) return null;
+        return { t: '', body: '<v>' + ser + '</v>' };
+      }
+      const txt = dateText(value);
+      return { t: 'inlineStr', body: '<is><t xml:space="preserve">' + xmlEscape(txt) + '</t></is>' };
+    }
+    if (typeof value === 'number' && isFinite(value)) return { t: '', body: '<v>' + String(value) + '</v>' };
+    if (typeof value === 'boolean') return { t: 'b', body: '<v>' + (value ? '1' : '0') + '</v>' };
+    return { t: 'inlineStr', body: '<is><t xml:space="preserve">' + xmlEscape(String(value)) + '</t></is>' };
+  }
+
+  // استبدال محتوى خلية موجودة مع الإبقاء على سمة النمط s وإزالة t القديمة
+  function replaceCellXml(xml, ref, vxml) {
+    const re = new RegExp('<c r="' + ref + '"([^>]*?)(/>|>.*?</c>)');
+    const m = re.exec(xml);
+    if (!m) return null;
+    let attrs = m[1].replace(/\s+t="[^"]*"/, '');
+    const tAttr = vxml && vxml.t ? ' t="' + vxml.t + '"' : '';
+    const cell = vxml
+      ? '<c r="' + ref + '"' + attrs + tAttr + '>' + vxml.body + '</c>'
+      : '<c r="' + ref + '"' + attrs + '/>';
+    return xml.slice(0, m.index) + cell + xml.slice(m.index + m[0].length);
+  }
+
+  // إدراج خلية في نهاية صف موجود
+  function insertCellInRow(xml, row1, cellXmlStr) {
+    const m = new RegExp('<row r="' + row1 + '"').exec(xml);
+    if (!m) return null;
+    const after = xml.indexOf('</row>', m.index + 1);
+    if (after < 0) return null;
+    return xml.slice(0, after) + cellXmlStr + xml.slice(after);
+  }
+
+  function rowExists(xml, row1) {
+    return new RegExp('<row r="' + row1 + '"').test(xml);
+  }
+
+  // إدراج صف كامل في موضعه الصحيح (قبل أول صف رقمه أكبر)
+  function insertRowXmlInPlace(xml, rowEl, row1) {
+    const re = /<row r="(\d+)"/g;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+      if (parseInt(m[1], 10) > row1) return xml.slice(0, m.index) + rowEl + xml.slice(m.index);
+    }
+    const sd = xml.indexOf('</sheetData>');
+    if (sd < 0) return null;
+    return xml.slice(0, sd) + rowEl + xml.slice(sd);
+  }
+
+  // استخراج قالب صف مرجعي: خصائص الصف وأنماط خلاياه
+  function extractRowTemplate(xml, row1) {
+    const re = new RegExp('<row r="' + row1 + '"([^>]*)>([\\s\\S]*?)</row>');
+    const m = re.exec(xml);
+    if (!m) return null;
+    const cells = [];
+    const cre = new RegExp('<c r="([A-Z]+)' + row1 + '"[^>]*?(?:\\/>|>)', 'g');
+    let cm, defaultS = null;
+    while ((cm = cre.exec(m[2])) !== null) {
+      const s = / s="(\d+)"/.exec(cm[0]);
+      cells.push({ col: cm[1], s: s ? s[1] : null });
+      if (s) defaultS = s[1];
+    }
+    return { attrTail: m[1], cells: cells, defaultS: defaultS };
+  }
+
+  function cellXmlStr(ref, value, s) {
+    const vx = cellValueXml(value, s);
+    const attrs = ' r="' + ref + '"' + (s ? ' s="' + s + '"' : '');
+    if (!vx || !vx.body) return '<c' + attrs + '/>';
+    return '<c' + attrs + (vx.t ? ' t="' + vx.t + '"' : '') + '>' + vx.body + '</c>';
+  }
+
+  // بناء صف جديد من القالب مع خلايا map (مفتاح = حرف العمود)
+  function buildRowXml(row1, tpl, map) {
+    const cols = new Set();
+    if (tpl) tpl.cells.forEach((c) => cols.add(c.col));
+    Object.keys(map || {}).forEach((k) => cols.add(k));
+    const colL = Array.from(cols).sort((a, b) => colNum(a) - colNum(b));
+    let inner = '';
+    colL.forEach((L) => {
+      const v = map ? map[L] : undefined;
+      const tplCell = tpl ? tpl.cells.find((c) => c.col === L) : null;
+      const s = tplCell ? tplCell.s : (tpl ? tpl.defaultS : null);
+      inner += cellXmlStr(L + row1, v, s);
+    });
+    return '<row r="' + row1 + '"' + (tpl ? tpl.attrTail : '') + '>' + inner + '</row>';
+  }
+
+  // إزاحة كل الصفوف والمراجع من fromRow1 وما بعده بمقدار by
+  function shiftRowsXml(xml, fromRow1, by) {
+    if (!by || by <= 0) return xml;
+    const bump = (s) => { const r = parseInt(s, 10); return String(r >= fromRow1 ? r + by : r); };
+    xml = xml.replace(/(<row r=")(\d+)(")/g, (m, a, b, c) => a + bump(b) + c);
+    xml = xml.replace(/(r=")([A-Z]+)(\d+)(")/g, (m, a, b, c, d) => a + b + bump(c) + d);
+    xml = xml.replace(/(ref=")([A-Z]+)(\d+)(:)([A-Z]+)(\d+)(")/g, (m, a, c1, r1, col, c2, r2, z) => a + c1 + bump(r1) + col + c2 + bump(r2) + z);
+    xml = xml.replace(/(ref=")([A-Z]+)(\d+)(")/g, (m, a, b, c, d) => a + b + bump(c) + d);
+    return xml;
+  }
+
+  // إدراج صفوف جديدة قبل أول صف برقم firstRow1 (بعد الإزاحة)
+  function insertRowsXml(xml, firstRow1, rowsXml) {
+    const marker = '<row r="' + firstRow1 + '"';
+    const idx = xml.indexOf(marker);
+    if (idx >= 0) return xml.slice(0, idx) + rowsXml + xml.slice(idx);
+    const sd = xml.indexOf('</sheetData>');
+    if (sd < 0) return null;
+    return xml.slice(0, sd) + rowsXml + xml.slice(sd);
+  }
+
+  // ضبط أبعاد الورقة (عدد أعمدة وصفوف نهاية النطاق)
+  function patchDimension(xml, endCol, endRow) {
+    const re = /<dimension ref="([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?"\/>/;
+    const m = re.exec(xml);
+    if (!m) return xml;
+    const start = m[1] + m[2];
+    const eCol = m[3] || m[1], eRow = m[4] || m[2];
+    const eC = Math.max(colNum(eCol), (endCol === undefined || endCol === null) ? 0 : endCol);
+    const eR = Math.max(parseInt(eRow, 10), (endRow === undefined || endRow === null) ? 0 : endRow);
+    return xml.replace(re, '<dimension ref="' + start + ':' + colLetter(eC - 1) + eR + '"/>');
+  }
+
+  function appendColsXml(xml, colsXml) {
+    const m = /(<cols>[\s\S]*?<\/cols>)/.exec(xml);
+    if (m) return xml.slice(0, m.index + m[1].length) + colsXml + xml.slice(m.index + m[1].length);
+    const sd = xml.indexOf('<sheetData>');
+    if (sd >= 0) return xml.slice(0, sd) + '<cols>' + colsXml + '</cols>' + xml.slice(sd);
+    return xml;
+  }
+
+  // إزاحة نطاق الطباعة Print_Area لورقة معيّنة ضمن workbook.xml
+  function patchWorkbookPrintAreas(wbXml, sheetIndex, fromRow1, by) {
+    const re = /(<definedName\b[^>]*name="_xlnm\.Print_Area"[^>]*localSheetId="(\d+)"[^>]*>)([\s\S]*?)(<\/definedName>)/g;
+    return wbXml.replace(re, (all, open, lsid, body, close) => {
+      if (parseInt(lsid, 10) !== sheetIndex) return all;
+      const newBody = body.replace(/\$([A-Z]+)\$(\d+)(?::\$([A-Z]+)\$(\d+))?/g, (m, c1, r1, c2, r2) => {
+        let rb = parseInt(r1, 10); if (rb >= fromRow1) rb += by;
+        if (c2) { let re2 = parseInt(r2, 10); if (re2 >= fromRow1) re2 += by; return '$' + c1 + '$' + rb + ':$' + c2 + '$' + re2; }
+        return '$' + c1 + '$' + rb;
+      });
+      return open + newBody + close;
+    });
+  }
+
+  function cellStyleOf(xml, ref) {
+    const m = new RegExp('<c r="' + ref + '"[^>]*?s="(\\d+)"').exec(xml);
+    return m ? m[1] : null;
+  }
+
+  // مسار ملف الورقة داخل الحزمة عبر workbook.xml + الملفات المرتبطة
+  function sheetXmlPath(zip, sheetName) {
+    const wbXml = zip['xl/workbook.xml'] ? new TextDecoder().decode(zip['xl/workbook.xml']) : null;
+    if (!wbXml) return null;
+    let rId = null;
+    const sheetRe = /<sheet\b[^>]*\/?>/g;
+    let m;
+    while ((m = sheetRe.exec(wbXml)) !== null) {
+      const nm = /name="([^"]*)"/.exec(m[0]);
+      if (nm && nm[1] === sheetName) {
+        const idm = /r:id="(rId\d+)"/.exec(m[0]);
+        rId = idm && idm[1];
+        break;
+      }
+    }
+    if (!rId) return null;
+    const rels = zip['xl/_rels/workbook.xml.rels'] ? new TextDecoder().decode(zip['xl/_rels/workbook.xml.rels']) : '';
+    const relRe = /<Relationship\b([^>]*?)>/g;
+    let rm, target = null;
+    while ((rm = relRe.exec(rels)) !== null) {
+      const idm = /\bId="([^"]*)"/.exec(rm[1]);
+      if (idm && idm[1] === rId) {
+        const tm = /\bTarget="([^"]*)"/.exec(rm[1]);
+        target = tm && tm[1];
+        break;
+      }
+    }
+    if (!target) return null;
+    if (/^[a-z]+:\/\//i.test(target)) return null;
+    if (target.charAt(0) !== '/') target = 'xl/' + target;
+    return target.replace(/^\//, '');
+  }
+
+  // مسار ورقة غير مستخدم داخل الحزمة
+  function nextSheetPath(zip) {
+    let n = 1;
+    while (zip['xl/worksheets/sheet' + n + '.xml']) n++;
+    return 'xl/worksheets/sheet' + n + '.xml';
+  }
+
+  function baseNameOf(p) {
+    return p.slice(p.lastIndexOf('/') + 1);
+  }
+
+  // تسجيل نُسخ الأوراق الجديدة في الحزمة: Content_Types + workbook.xml (+مناطق الطباعة) + العلاقات + خصائص المستند
+  function registerNewSheets(zip, wbXml, sheetNames, madeSheets) {
+    const te = new TextDecoder();
+    let x = wbXml;
+    let m;
+
+    // معرّفات جديدة غير مكررة
+    let maxSheetId = 0, maxRid = 0;
+    const sidRe = /<sheet\b[^>]*\bsheetId="(\d+)"/g;
+    while ((m = sidRe.exec(wbXml)) !== null) maxSheetId = Math.max(maxSheetId, parseInt(m[1], 10));
+    const relsXml = te.decode(zip['xl/_rels/workbook.xml.rels'] || new Uint8Array());
+    const ridRe = /\bId="rId(\d+)"/g;
+    while ((m = ridRe.exec(relsXml)) !== null) maxRid = Math.max(maxRid, parseInt(m[1], 10));
+
+    // نطاق الطباعة الموروث: من الورقة المرجعية، وإلا أول نطاق متاح في الملف
+    const paList = [];
+    const paRe = /<definedName\b[^>]*name="_xlnm\.Print_Area"[^>]*localSheetId="(\d+)"[^>]*>([\s\S]*?)<\/definedName>/g;
+    while ((m = paRe.exec(wbXml)) !== null) paList.push({ idx: parseInt(m[1], 10), body: m[2] });
+    const refIdx = sheetNames.indexOf(madeSheets[0].cloneOf);
+    const refPa = paList.filter((p2) => p2.idx === refIdx)[0] || paList[0];
+    const paRange = refPa ? refPa.body.replace(/^[^!]*!/, '') : null;
+
+    let sheetsIns = '', relsIns = '', paIns = '';
+    const paNames = [];
+    madeSheets.forEach((op, i) => {
+      const sheetId = maxSheetId + 1 + i;
+      const rId = 'rId' + (maxRid + 1 + i);
+      op.sheetId = sheetId;
+      op.rId = rId;
+      sheetsIns += '<sheet name="' + xmlEscape(op.name) + '" sheetId="' + sheetId + '" r:id="' + rId + '"/>';
+      relsIns += '<Relationship Id="' + rId + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="' +
+        op.newSheetPath.replace(/^xl\//, '') + '"/>';
+      if (paRange) {
+        const nm = "'" + op.name.replace(/'/g, "''") + "'";
+        paIns += '<definedName name="_xlnm.Print_Area" localSheetId="' + (sheetNames.length + i) + '">' + xmlEscape(nm + '!' + paRange) + '</definedName>';
+        paNames.push(nm + '!Print_Area');
+      }
+    });
+
+    x = x.replace('</sheets>', sheetsIns + '</sheets>');
+    if (paIns) {
+      if (x.indexOf('</definedNames>') >= 0) x = x.replace('</definedNames>', paIns + '</definedNames>');
+      else x = x.replace('</sheets>', '</sheets><definedNames>' + paIns + '</definedNames>');
+    }
+
+    // العلاقات: علاقة ورقة لكل نسخة + نسخ ملفات علاقات الأوراق المرجعية (إعدادات الطابعة)
+    const rels = relsXml.replace('</Relationships>', relsIns + '</Relationships>');
+    const sheetRels = {};
+    madeSheets.forEach((op) => {
+      if (!op.clonePath || !op.newSheetPath) return;
+      const src = zip['xl/worksheets/_rels/' + baseNameOf(op.clonePath) + '.rels'];
+      if (!src) return;
+      sheetRels['xl/worksheets/_rels/' + baseNameOf(op.newSheetPath) + '.rels'] = te.decode(src);
+    });
+
+    // أنواع المحتوى
+    let ct = te.decode(zip['[Content_Types].xml'] || new Uint8Array());
+    ct = ct.replace('</Types>', madeSheets.map((op) =>
+      '<Override PartName="/' + op.newSheetPath + '" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('') + '</Types>');
+
+    // خصائص المستند: عدد الأوراق وأسماؤها
+    let appXml = null;
+    if (zip['docProps/app.xml']) {
+      appXml = te.decode(zip['docProps/app.xml']);
+      const addN = madeSheets.length, addPa = paNames.length;
+      appXml = appXml.replace(/(<vt:lpstr>Worksheets<\/vt:lpstr><\/vt:variant><vt:variant><vt:i4>)(\d+)(<\/vt:i4>)/,
+        (mm, a, n, b) => a + (parseInt(n, 10) + addN) + b);
+      if (addPa) appXml = appXml.replace(/(<vt:lpstr>Named Ranges<\/vt:lpstr><\/vt:variant><vt:variant><vt:i4>)(\d+)(<\/vt:i4>)/,
+        (mm, a, n, b) => a + (parseInt(n, 10) + addPa) + b);
+      const tm = /<TitlesOfParts>([\s\S]*?)<\/TitlesOfParts>/.exec(appXml);
+      if (tm) {
+        const sheetTags = madeSheets.map((op) => '<vt:lpstr>' + xmlEscape(op.name) + '</vt:lpstr>').join('');
+        const paTags = paNames.map((n2) => '<vt:lpstr>' + xmlEscape(n2) + '</vt:lpstr>').join('');
+        // كل الأسماء تُدرج داخل عنصر vt:vector حصراً، وإلا رفض Excel الملف وأصلحه
+        const veAt = tm[1].lastIndexOf('</vt:vector>');
+        let inner = tm[1];
+        if (veAt >= 0) {
+          const head0 = tm[1].slice(0, veAt), tail = tm[1].slice(veAt);
+          const at = head0.search(/<vt:lpstr>[^<]*!Print_Area<\/vt:lpstr>/);
+          const head = at >= 0 ? head0.slice(0, at) + sheetTags + head0.slice(at) + paTags : head0 + sheetTags + paTags;
+          inner = head + tail;
+          // حجم المتجه = عدد عناصره الفعلي
+          inner = inner.replace(/<vt:vector\b([^>]*?)size="(\d+)"([^>]*)>([\s\S]*?)<\/vt:vector>/,
+            (mm, a, n, b2, body) => '<vt:vector' + a + 'size="' + ((body.match(/<vt:lpstr>/g) || []).length) + '"' + b2 + '>' + body + '</vt:vector>');
+        }
+        appXml = appXml.replace(tm[0], '<TitlesOfParts>' + inner + '</TitlesOfParts>');
+      }
+    }
+
+    return { wbXml: x, relsXml: rels, contentTypes: ct, appXml: appXml, sheetRels: sheetRels };
+  }
+
+  // البناء النهائي: فتح الحزمة → تحرير أوراق العمل → إعادة الضغط
+  async function buildXmlOutput(T, ops, targets) {
+    if (!window.fflate) await ensureFflate();
+    if (!window.fflate) return null;
+    try {
+      const te = new TextDecoder(), enc = new TextEncoder();
+      const zip = window.fflate.unzipSync(new Uint8Array(T.bytes));
+      const wbXml = te.decode(zip['xl/workbook.xml'] || new Uint8Array());
+      let newWbXml = null;
+      const sheetNames = T.wb.SheetNames || [];
+      _styleFmt = parseStyleFormats(zip['xl/styles.xml'] ? te.decode(zip['xl/styles.xml']) : '');
+
+      const toEdit = ops.filter((o) => o.filled.length || o.newRows.length || o.newCols.length);
+      // نسخة أصلية (غير معبَّأة) من أوراق القالب المرجعية، حتى تُبنى الصفحات الجديدة من القالب لا من ورقة سبق تعبئتها
+      const pristine = {};
+      toEdit.filter((o) => o.newPage).forEach((o) => {
+        const p = sheetXmlPath(zip, o.cloneOf);
+        if (p && zip[p] && !pristine[p]) pristine[p] = zip[p].slice();
+      });
+      const madeSheets = [];
+      for (const op of toEdit) {
+        let path;
+        if (op.newPage) {
+          // نسخة كاملة من الورقة المرجعية تُضاف للحزمة كصفحة جديدة
+          const src = sheetXmlPath(zip, op.cloneOf);
+          const srcBytes = src ? (pristine[src] || zip[src]) : null;
+          if (!src || !srcBytes) continue;
+          path = nextSheetPath(zip);
+          zip[path] = srcBytes.slice();
+          op.clonePath = src;
+          op.newSheetPath = path;
+          madeSheets.push(op);
+        } else {
+          path = sheetXmlPath(zip, op.name);
+        }
+        if (!path || !zip[path]) continue;
+        let xml = te.decode(zip[path]);
+        const added = op.newRows.length;
+        const fromRow1 = op.insertAt + 1;
+
+        if (added > 0) xml = shiftRowsXml(xml, fromRow1, added);
+
+        // رؤوس الأعمدة الجديدة
+        for (const nc of op.newCols) {
+          const hr1 = op.p.headerIndex + 1;
+          const s = cellStyleOf(xml, colLetter(nc.col - 1) + hr1);
+          const cell = cellXmlStr(colLetter(nc.col) + hr1, nc.name, s);
+          xml = insertCellInRow(xml, hr1, cell) || xml;
+        }
+
+        // تعبئة الصفوف الموجودة
+        const refRow1 = added ? op.insertAt : Math.max(op.p.headerIndex + 1, op.p.lastRow - 1);
+        for (const fr of op.filled) {
+          const r1 = fr.rowIdx + 1;
+          const map = {};
+          fr.cells.forEach((m2) => { map[colLetter(m2.col)] = m2.value; });
+          if (!rowExists(xml, r1)) {
+            const tpl = extractRowTemplate(xml, refRow1);
+            xml = insertRowXmlInPlace(xml, buildRowXml(r1, tpl, map), r1) || xml;
+          } else {
+            for (const m2 of fr.cells) {
+              const ref = colLetter(m2.col) + r1;
+              const sCell = cellStyleOf(xml, ref);
+              const vx = cellValueXml(m2.value, sCell);
+              if (!vx) { xml = replaceCellXml(xml, ref, null) || xml; continue; }
+              const replaced = replaceCellXml(xml, ref, vx);
+              xml = replaced || insertCellInRow(xml, r1, cellXmlStr(ref, m2.value, sCell || cellStyleOf(xml, colLetter(m2.col) + (r1 - 1)))) || xml;
+            }
+          }
+        }
+
+        // الصفوف الجديدة
+        if (added > 0) {
+          const tpl = extractRowTemplate(xml, refRow1);
+          let rowsXml = '';
+          op.newRows.forEach((nr, i) => {
+            const r1 = fromRow1 + i;
+            const map = {};
+            nr.cells.forEach((m2) => { map[colLetter(m2.col)] = m2.value; });
+            op.newCols.forEach((nc) => { if (!(colLetter(nc.col) in map)) map[colLetter(nc.col)] = ''; });
+            rowsXml += buildRowXml(r1, tpl, map);
+          });
+          xml = insertRowsXml(xml, fromRow1 + added, rowsXml);
+        }
+
+        // الأبعاد وملاءمة عرض الأعمدة الجديدة
+        if (op.newCols.length) {
+          xml = patchDimension(xml, targets.width, op.p.lastRow + added);
+          const colsXml = op.newCols.map((nc) => '<col min="' + colLetter(nc.col) + '" max="' + colLetter(nc.col) + '" customWidth="1" width="16"/>').join('');
+          xml = appendColsXml(xml, colsXml);
+        } else if (added > 0) {
+          xml = patchDimension(xml, undefined, op.p.lastRow + added);
+        }
+
+        zip[path] = enc.encode(xml);
+        if (added > 0) {
+          const idx = sheetNames.indexOf(op.name);
+          if (idx >= 0) newWbXml = patchWorkbookPrintAreas(newWbXml || wbXml, idx, fromRow1, added);
+        }
+      }
+
+      if (madeSheets.length) {
+        const reg = registerNewSheets(zip, newWbXml || wbXml, sheetNames, madeSheets);
+        newWbXml = reg.wbXml;
+        zip['xl/_rels/workbook.xml.rels'] = enc.encode(reg.relsXml);
+        zip['[Content_Types].xml'] = enc.encode(reg.contentTypes);
+        if (reg.appXml) zip['docProps/app.xml'] = enc.encode(reg.appXml);
+        Object.keys(reg.sheetRels).forEach((k) => { zip[k] = enc.encode(reg.sheetRels[k]); });
+      }
+
+      if (newWbXml) zip['xl/workbook.xml'] = enc.encode(newWbXml);
+      const out = window.fflate.zipSync(zip, { level: 6 });
+      return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    } catch (e) {
+      console.error('محرك الحفظ الأمين فشل وسيُستخدم المسار الاحتياطي:', e);
+      return null;
+    }
+  }
+
+  // هل الصف مشغول بأي قيمة ضمن الأعمدة المعيّنة؟ (يُستعمل لتوزيع الدفعات)
+  function rowOccupied(row, mapped) {
+    if (!row) return false;
+    for (let c = 0; c < row.length; c++) {
+      if (!mapped.has(c)) continue;
+      if (row[c] != null && String(row[c]).trim() !== '') return true;
+    }
+    return false;
+  }
+
+  // موضع إدراج الصفوف الجديدة ضمن ورقة محدّدة (كشف تذييلها)
+  function detectInsertRowFor(p, sheetName, targets) {
+    const end = p.lastRow;
+    if (state.insertMode === 'end') return end;
+    const candidates = [];
+    const ws = state.files.target.wb.Sheets[sheetName];
+    const merges = (ws && ws['!merges']) || [];
+    let m = Infinity;
+    merges.forEach((mg) => { if (mg.s.r > p.dataStart) m = Math.min(m, mg.s.r); });
+    if (isFinite(m)) candidates.push(m);
+
+    const mapped = new Set(targets.cols.map((c) => c.tgtIndex));
+    if (state.mapping.tgtKey != null) mapped.add(state.mapping.tgtKey);
+    let blanks = 0, b = -1;
+    for (let r = p.dataStart; r < end; r++) {
+      const row = p.grid[r] || [];
+      let nonEmpty = 0, inMapped = 0;
+      for (let c = 0; c < row.length; c++) {
+        const v = row[c];
+        if (v == null || String(v).trim() === '') continue;
+        nonEmpty++;
+        if (mapped.has(c)) inMapped++;
+      }
+      if (nonEmpty === 0 || inMapped === 0) { blanks++; continue; }
+      if (blanks > 0) { b = r; break; }
+    }
+    if (b >= 0) candidates.push(b);
+
+    if (!candidates.length) return end;
+    return Math.max(p.dataStart, Math.min.apply(null, candidates));
+  }
+
+  // آخر رقم تسلسلي في العمود الأول لمنطقة الجدول لورقة محدّدة
+  function sequenceStartFor(op) {
+    if (!state.autoNumber) return null;
+    const p = op.p;
+    let last = null, count = 0;
+    const end = op.added ? Math.min(op.insertAt, p.lastRow) : p.lastRow;
+    for (let r = p.dataStart; r < end; r++) {
+      const v = p.grid[r] ? p.grid[r][0] : null;
+      if (v == null || String(v).trim() === '') continue;
+      if (typeof v === 'number' && isFinite(v)) { last = v; count++; }
+      else return null;
+    }
+    return (last === null || count === 0) ? null : last;
+  }
+
+  async function run() {
+    const S = state.files.source, T = state.files.target;
+    if (!S || !T) { toast('ارفع ملف البيانات وملف القالب أولاً.', 'error'); return; }
+    if (state.fillMode !== 'order' && (state.mapping.srcKey == null || state.mapping.tgtKey == null)) {
+      toast('اختر عمود المطابقة في كلا الملفين.', 'error'); return;
+    }
+    const targets = resolveTargets();
+    if (!targets.cols.length) {
+      toast('اختر حقلاً واحداً على الأقل لنقله إلى القالب.', 'error'); return;
+    }
+    // عمود الاسم ودالة التنظيف (حذف اللقب/العشيرة) تُطبَّق عند نقل الاسم للقالب
+    const nameTgt = nameColumnIndex();
+    const cleanVal = (col, v) => (col.tgtIndex === nameTgt ? cleanName(v, state.nameMode) : v);
+
+    const btn = $('#runBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="mono" style="font-size:12.5px">جارٍ المعالجة…</span>';
+    $('#runHint').textContent = 'يتم البحث والمطابقة داخل المتصفح…';
+    await new Promise((r) => setTimeout(r, 40));
+
+    try {
+      const t0 = performance.now();
+      const srcKey = state.mapping.srcKey, tgtKey = state.mapping.tgtKey;
+      const keyMode = state.fillMode !== 'order';
+      const multi = !keyMode && state.sheetsMode === 'all' && (T.sheetNames || []).length > 1;
+      const built = keyMode ? buildSourceIndex() : null;
+
+      // ---- قائمة أوراق العمل القابلة للتعبئة (كل نسخة = دفعة) ----
+      const sheetList = [];
+      if (multi) {
+        for (const name of T.sheetNames) {
+          const p = parseSheet(T.wb, name, 0);
+          if (p.error || p.headerIndex <= 0) continue;
+          sheetList.push({ name: name, p: p });
+        }
+      } else {
+        sheetList.push({ name: T.sheet, p: { headers: T.headers, width: T.width, headerIndex: T.headerIndex, dataStart: T.dataStart, lastRow: T.lastRow, grid: T.grid, rows: T.rows } });
+      }
+      if (!sheetList.length) { toast('لا توجد أوراق قابلة للتعبئة في القالب.', 'error'); return; }
+
+      const mappedSet = new Set(targets.cols.map((c) => c.tgtIndex));
+      if (tgtKey != null) mappedSet.add(tgtKey);
+
+      // ---- خطة التعبئة لكل ورقة ----
+      const ops = [];
+      const agg = { matched: 0, unmatched: 0, blankTpl: 0, cells: 0, added: 0, newPages: 0, pageCap: 0, blankSrc: built ? built.blank : 0, duplicates: built ? built.duplicates : 0 };
+      const unmatchedSample = [], addedSample = [];
+
+      if (keyMode) {
+        // وضع المفتاح: الورقة النشطة — تعبئة الصفوف المطابَقة + إضافة غير المطابَقة
+        const sh = sheetList[0];
+        const op = { name: sh.name, p: sh.p, filled: [], newRows: [], added: 0, insertAt: 0, newCols: [], leftEmpty: 0 };
+        const tplKeys = new Set();
+        const p = sh.p;
+        for (let r = 0; r < p.rows.length; r++) {
+          const k = normKey(p.rows[r] ? p.rows[r][tgtKey] : null, state.opts);
+          if (!k) { agg.blankTpl++; continue; }
+          tplKeys.add(k);
+          const si = built.idx.get(k);
+          if (si === undefined) {
+            agg.unmatched++;
+            if (unmatchedSample.length < 6) unmatchedSample.push(fmtCell(p.rows[r] ? p.rows[r][tgtKey] : ''));
+            continue;
+          }
+          agg.matched++;
+          const rowIdx = p.dataStart + r;
+          const cells = [];
+          for (let c = 0; c < targets.cols.length; c++) {
+            const col = targets.cols[c];
+            const v = (S.rows[si] ? S.rows[si][col.srcIndex] : null);
+            cells.push({ col: col.tgtIndex, value: cleanVal(col, v === undefined ? null : v) });
+            agg.cells++;
+          }
+          op.filled.push({ rowIdx: rowIdx, cells: cells });
+        }
+        if (state.appendUnmatched) {
+          for (let r = 0; r < S.rows.length; r++) {
+            const rawKey = S.rows[r] ? S.rows[r][srcKey] : null;
+            const k = normKey(rawKey, state.opts);
+            if (!k || tplKeys.has(k)) continue;
+            tplKeys.add(k);
+            const cells = [{ col: tgtKey, value: rawKey == null ? null : rawKey }];
+            for (let c = 0; c < targets.cols.length; c++) {
+              const col = targets.cols[c];
+              const v = S.rows[r] ? S.rows[r][col.srcIndex] : null;
+              cells.push({ col: col.tgtIndex, value: cleanVal(col, v === undefined ? null : v) });
+              agg.cells++;
+            }
+            op.newRows.push({ cells: cells });
+            if (addedSample.length < 6) addedSample.push(fmtCell(rawKey));
+          }
+        }
+        op.added = op.newRows.length;
+        agg.added += op.added;
+        ops.push(op);
+      } else {
+        // وضع الترتيب: كل نسخة تملأ صفوفها الفارغة بالدفعة التالية، والفائض يُوزَّع دورياً
+        const withCap = sheetList.map((sh) => {
+          const empties = [];
+          for (let r = sh.p.dataStart; r < sh.p.lastRow; r++) {
+            const row = sh.p.grid[r] || [];
+            if (!rowOccupied(row, mappedSet)) empties.push(r);
+          }
+          return { sh: sh, empties: empties, op: null };
+        });
+        let cursor = 0;
+        for (let i = 0; i < withCap.length; i++) {
+          const w = withCap[i];
+          const take = Math.min(w.empties.length, S.rows.length - cursor);
+          w.op = { name: w.sh.name, p: w.sh.p, filled: [], newRows: [], added: 0, insertAt: 0, newCols: [], leftEmpty: w.empties.length - take };
+          for (let k = 0; k < take; k++) {
+            const rowIdx = w.empties[k];
+            const cells = [];
+            for (let c = 0; c < targets.cols.length; c++) {
+              const col = targets.cols[c];
+              const v = S.rows[cursor + k] ? S.rows[cursor + k][col.srcIndex] : null;
+              cells.push({ col: col.tgtIndex, value: cleanVal(col, v === undefined ? null : v) });
+              agg.cells++;
+            }
+            w.op.filled.push({ rowIdx: rowIdx, cells: cells });
+          }
+          agg.matched += take;
+          cursor += take;
+          ops.push(w.op);
+        }
+        if (state.appendUnmatched && cursor < S.rows.length) {
+          // سعة الصفحة = عدد الصفوف الفارغة في أكثر نُسخ القالب استيعاباً
+          const refW = withCap.reduce((a, b) => (b.empties.length > a.empties.length ? b : a), withCap[0]);
+          const refRows = refW.empties;
+          if (state.pageMode === 'newpage' && refRows.length > 0) {
+            // صفحة/نسخة كاملة من النموذج لكل دفعة — دون إضافة أي صف داخل ورقة موجودة
+            const usedNames = new Set(T.sheetNames || []);
+            let pageSeq = sheetList.length;
+            while (cursor < S.rows.length) {
+              const take = Math.min(refRows.length, S.rows.length - cursor);
+              let newName;
+              do { pageSeq++; newName = 'الصفحة ' + pageSeq; } while (usedNames.has(newName));
+              usedNames.add(newName);
+              const op = { name: newName, p: refW.sh.p, filled: [], newRows: [], added: 0, insertAt: 0, newCols: [], leftEmpty: refRows.length - take, newPage: true, cloneOf: refW.sh.name };
+              for (let k = 0; k < take; k++) {
+                const cells = [];
+                for (let c = 0; c < targets.cols.length; c++) {
+                  const col = targets.cols[c];
+                  const v = S.rows[cursor + k] ? S.rows[cursor + k][col.srcIndex] : null;
+                  cells.push({ col: col.tgtIndex, value: cleanVal(col, v === undefined ? null : v) });
+                  agg.cells++;
+                }
+                op.filled.push({ rowIdx: refRows[k], cells: cells });
+              }
+              agg.matched += take;
+              agg.newPages++;
+              agg.pageCap = refRows.length;
+              cursor += take;
+              ops.push(op);
+            }
+          } else {
+            const capFn = (w) => Math.max(1, w.empties.length);
+            let k = 0;
+            while (cursor < S.rows.length) {
+              const w = withCap[k % withCap.length];
+              const take = Math.min(capFn(w), S.rows.length - cursor);
+              const op = w.op;
+              for (let i = 0; i < take; i++) {
+                const cells = [];
+                for (let c = 0; c < targets.cols.length; c++) {
+                  const col = targets.cols[c];
+                  const v = S.rows[cursor + i] ? S.rows[cursor + i][col.srcIndex] : null;
+                  cells.push({ col: col.tgtIndex, value: cleanVal(col, v === undefined ? null : v) });
+                  agg.cells++;
+                }
+                op.newRows.push({ cells: cells });
+              }
+              cursor += take;
+              k++;
+            }
+          }
+        }
+        ops.forEach((o) => { o.added = o.newRows.length; agg.added += o.added; });
+        agg.unmatched = Math.max(0, S.rows.length - agg.matched - agg.added);
+      }
+
+      // ---- الأعمدة الجديدة ----
+      targets.cols.forEach((c) => { if (c.isNew) ops.forEach((o) => o.newCols.push({ col: c.tgtIndex, name: c.name })); });
+
+      // ---- موضع الإدراج والترقيم التسلسلي لكل ورقة ----
+      const mappedColsN = new Set(targets.cols.map((c) => c.tgtIndex));
+      ops.forEach((op) => {
+        op.insertAt = op.added ? detectInsertRowFor(op.p, op.name, targets) : op.p.grid.length;
+        const seqFrom = op.added ? sequenceStartFor(op) : null;
+        op.seqUsed = seqFrom !== null && !mappedColsN.has(0) && tgtKey !== 0;
+        op.seqFrom = seqFrom;
+        if (op.seqUsed) op.newRows.forEach((nr, i) => nr.cells.unshift({ col: 0, value: seqFrom + 1 + i }));
+      });
+
+      // ---- المعاينة: شبكة الورقة الأولى ----
+      const firstOp = ops[0];
+      const out = firstOp.p.grid.map((r) => (Array.isArray(r) ? r.slice() : []));
+      const changed = new Set();
+      const ensureRow = (i) => { while (out.length <= i) out.push([]); return out[i]; };
+      firstOp.newCols.forEach((c) => { ensureRow(firstOp.p.headerIndex)[c.col] = c.name; changed.add(firstOp.p.headerIndex + ':' + c.col); });
+      firstOp.filled.forEach((fr) => fr.cells.forEach((m2) => { ensureRow(fr.rowIdx)[m2.col] = m2.value; changed.add(fr.rowIdx + ':' + m2.col); }));
+      firstOp.newRows.forEach((nr, i) => {
+        const band = new Array(targets.width).fill(null);
+        nr.cells.forEach((m2) => { band[m2.col] = m2.value; changed.add((firstOp.insertAt + i) + ':' + m2.col); });
+        out.splice(firstOp.insertAt + i, 0, band);
+      });
+
+      // ---- الكتابة: محرك الحفظ الأمين (ZIP/XML) أو شبكة بسيطة (CSV) ----
+      let wb = T.wb, blob = null, usedXml = false;
+      if (T.bytes) {
+        blob = await buildXmlOutput(T, ops, targets);
+        usedXml = !!blob;
+        if (!blob) {
+          const ws = XLSX.utils.aoa_to_sheet(out);
+          ws['!cols'] = computeColWidths(out);
+          wb.Sheets[firstOp.name] = ws;
+        }
+      } else {
+        const ws = XLSX.utils.aoa_to_sheet(out);
+        ws['!cols'] = computeColWidths(out);
+        wb.Sheets[firstOp.name] = ws;
+      }
+
+      const base = T.file.name.replace(/\.(xlsx|xlsm|xls|csv|txt)$/i, '');
+      const now = new Date();
+      const stamp = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') +
+        '-' + String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+
+      state.result = {
+        wb: wb, blob: blob,
+        filename: base + ' - معبأ ' + stamp + '.xlsx',
+        sheet: firstOp.name,
+        sheetCount: (T.wb.SheetNames || []).length + agg.newPages,
+        newPages: agg.newPages, pageCap: agg.pageCap,
+        fillSheets: ops.map((o) => ({ name: o.name, matched: o.filled.length, added: o.added, leftEmpty: o.leftEmpty || 0, newPage: !!o.newPage })),
+        multi: ops.length > 1,
+        matched: agg.matched, unmatched: agg.unmatched, blankTpl: agg.blankTpl,
+        added: agg.added, cells: agg.cells, duplicates: agg.duplicates, blankSrc: agg.blankSrc,
+        unmatchedSample: unmatchedSample, addedSample: addedSample,
+        cols: targets.cols, out: out, changed: changed, hr: firstOp.p.headerIndex,
+        ms: Math.round(performance.now() - t0),
+        append: state.appendUnmatched,
+        insertAt: firstOp.insertAt,
+        seqUsed: firstOp.seqUsed, seqFrom: firstOp.seqFrom,
+        preserved: !!T.bytes, exact: usedXml
+      };
+      state.stale = false;
+      renderResult();
+      renderRail();
+      toast('تمت المعالجة: ' + num(agg.matched + agg.added) + ' صفاً مولّداً في الملف و ' + num(agg.cells) + ' خلية معبَّأة.', 'success');
+      $('#panel3').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      toast('حدث خطأ أثناء المعالجة: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+      $('#runHint').textContent = 'لا شيء يُرسل إلى أي سيرفر — كل الحساب يجري في هذا المتصفح.';
+    }
+  }
+
+  function computeColWidths(aoa, maxRows) {
+    const widths = [];
+    const n = Math.min(aoa.length, maxRows || 250);
+    for (let r = 0; r < n; r++) {
+      const row = aoa[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        const v = row[c];
+        if (v == null) continue;
+        const len = fmtCell(v).length;
+        widths[c] = Math.max(widths[c] || 8, Math.min(38, len + 3));
+      }
+    }
+    return widths.map((w) => ({ wch: w || 11 }));
+  }
+
+  /* =====================================================================
+     9) عرض النتيجة
+     ===================================================================== */
+  function renderResult() {
+    const R = state.result;
+    const empty = $('#resEmpty'), body = $('#resBody');
+
+    if (!R) {
+      empty.classList.remove('hidden');
+      body.classList.add('hidden');
+      body.innerHTML = '';
+      return;
+    }
+    empty.classList.add('hidden');
+    body.classList.remove('hidden');
+
+    const pct = (R.matched + R.unmatched) ? Math.round((R.matched / (R.matched + R.unmatched)) * 100) : 0;
+
+    let notes = '';
+    if (state.stale) {
+      notes += '<div class="note note-warn"><span class="note-dot"></span><div><b>تغيّرت الإعدادات بعد آخر معالجة.</b> اضغط «تنفيذ المعالجة» مرة أخرى لتحديث النتيجة قبل التحميل.</div></div>';
+    }
+    if (R.unmatched) {
+      notes += '<div class="note note-warn"><span class="note-dot"></span><div><b>' + num(R.unmatched) + ' صفاً في القالب لم يُعثر له على مطابق.</b>' +
+        (R.unmatchedSample.length ? ' أمثلة على القيم: <span class="mono">' + esc(R.unmatchedSample.join(' ، ')) + '</span>' : '') +
+        (R.append ? '' : ' يمكنك تفعيل «إضافة الحالات الزائدة عن سعة القالب» لاستيعابها.') + '</div></div>';
+    }
+    if (R.added) {
+      notes += '<div class="note note-info"><span class="note-dot"></span><div><b>أُضيف ' + num(R.added) + ' صفاً جديداً</b> من ملف البيانات لم يكن له مقابل في القالب' +
+        (R.addedSample.length ? ': <span class="mono">' + esc(R.addedSample.join(' ، ')) + '</span>' : '') +
+        ' — أُدرجت في الصف <span class="mono">' + num(R.insertAt + 1) + '</span>' +
+        (R.insertAt < R.out.length - R.added ? ' (قبل تذييل النموذج، مع إزاحة ما بعده للأسفل)' : '') + '.' +
+        (R.seqUsed ? ' ورُقّمت تلقائياً بدءاً من <span class="mono">' + num(R.seqFrom + 1) + '</span>.' : '') +
+        '</div></div>';
+    }
+    if (R.newPages) {
+      notes += '<div class="note note-info"><span class="note-dot"></span><div><b>أُنشئت ' + num(R.newPages) + ' صفحة (نسخة) جديدة من النموذج تلقائياً</b> — ' +
+        'كل صفحة تستوعب ' + num(R.pageCap) + ' صفوف كحدّ أقصى (بحسب صفوف النموذج)، ولم تُضف أي صفوف داخل الأوراق الأصلية. ' +
+        'إجمالي الأوراق في الملف: <span class="mono">' + num(R.sheetCount) + '</span>.</div></div>';
+    }
+    if (R.multi) {
+      const origSheets = R.fillSheets.filter((f) => !f.newPage);
+      const madeSheets2 = R.fillSheets.filter((f) => f.newPage);
+      notes += '<div class="note note-info"><span class="note-dot"></span><div>وُزعت البيانات على <b>' + num(R.fillSheets.length) + ' صفحة (نسخة) من النموذج</b> — ' +
+        (origSheets.length ? 'الأوراق الأصلية: ' + esc(origSheets.map((f) => f.name + ' (' + num(f.matched + f.added) + (f.leftEmpty ? '، ' + num(f.leftEmpty) + ' شاغرة' : '') + ')').join('، ')) + '. ' : '') +
+        (madeSheets2.length ? 'وأنشأ البرنامج <b>' + num(madeSheets2.length) + ' نسخة إضافية</b> (' + esc(madeSheets2[0].name) + ' … ' + esc(madeSheets2[madeSheets2.length - 1].name) + ') — ' + num(R.pageCap) + ' صفوف لكل صفحة.' : '') +
+        (R.append ? '' : ' لاستيعاب الفائض عن سعة النسخ فعّل «إضافة الحالات الزائدة عن سعة القالب».') + '</div></div>';
+    }
+    if (!R.preserved && (R.matched || R.added)) {
+      notes += '<div class="note note-warn"><span class="note-dot"></span><div><b>ملف CSV لا يحمل تنسيقاً.</b> الملف الناتج جدول بسيط بلا دمجات أو أنماط (الملف الأصلي نصي).</div></div>';
+    }
+    if (R.preserved && R.exact) {
+      notes += '<div class="note note-info"><span class="note-dot"></span><div>حُفظت بنية النموذج وأنماطه <b>بنسبة 100%</b> عبر محرك الحفظ الأمين: ' +
+        '<b>الحدود والألوان والخطوط والدمج وعرض الأعمدة وارتفاعات الصفوف وهوامش الطباعة</b> — يُحرَّر ملف ZIP/XML الأصلي مباشرة دون إعادة إنشاء، فلا يتغيّر شيء في الشكل.</div></div>';
+    } else if (R.preserved) {
+      notes += '<div class="note note-warn"><span class="note-dot"></span><div>حُفظت بنية النموذج (الدمج والعرض والارتفاعات وRTL) لكن المكتبة المجانية لا تصدّر الأنماط — ' +
+        'لم يعمل محرك الحفظ الأمين (يفترض أن يكون الضغط والتوليف بالحزمة جاهزين — تحقّق من اتصال الإنترنت وأعد المحاولة).</div></div>';
+    }
+    if (R.duplicates) {
+      notes += '<div class="note note-warn"><span class="note-dot"></span><div><b>' + num(R.duplicates) + ' مفتاحاً مكرراً</b> في ملف البيانات — اعتُمد ' +
+        (state.dupMode === 'last' ? 'آخر صف مطابق.' : 'أول صف مطابق.') + ' يمكنك تغيير ذلك من خيارات المطابقة.</div></div>';
+    }
+    if (R.blankSrc) {
+      notes += '<div class="note note-warn"><span class="note-dot"></span><div><b>' + num(R.blankSrc) + ' صفاً في ملف البيانات بلا قيمة مفتاح</b> — تم تجاهلها أثناء المطابقة.</div></div>';
+    }
+    if (R.blankTpl) {
+      notes += '<div class="note note-info"><span class="note-dot"></span><div><b>' + num(R.blankTpl) + ' صفاً في القالب بلا قيمة مفتاح</b> — تُركت كما هي دون تعبئة.</div></div>';
+    }
+    if (!R.unmatched && !R.added && R.matched) {
+      notes += '<div class="note note-info"><span class="note-dot"></span><div>كل صفوف القالب التي تحمل مفتاحاً وُجد لها مطابق في ملف البيانات (' + pct + '%).</div></div>';
+    }
+
+    body.innerHTML =
+      '<div class="stats">' +
+        '<div class="stat"><span class="stat-n good">' + num(R.matched) + '</span><span class="stat-l">صف مطابَق</span></div>' +
+        '<div class="stat"><span class="stat-n warn">' + num(R.unmatched) + '</span><span class="stat-l">صف بلا مطابق</span></div>' +
+        '<div class="stat"><span class="stat-n">' + num(R.added) + '</span><span class="stat-l">صف مُضاف</span></div>' +
+        '<div class="stat"><span class="stat-n">' + num(R.cells) + '</span><span class="stat-l">خلية معبَّأة</span></div>' +
+        (R.newPages ? '<div class="stat"><span class="stat-n good">' + num(R.newPages) + '</span><span class="stat-l">صفحة جديدة</span></div>' : '') +
+      '</div>' +
+      '<p class="mt-2 text-[11.5px] text-[var(--ink-3)]">الورقة: <span class="mono">' + esc(R.sheet) + '</span> · ' +
+        num(R.sheetCount) + ' ورقة في الملف · ' + (R.multi ? num(R.fillSheets.length) + ' نسخة مجهّزة · ' : '') + num(R.cols.length) + ' عموداً منقولاً · ' + num(R.ms) + ' م.ث</p>' +
+      '<div class="notes">' + notes + '</div>' +
+      '<div class="runbar">' +
+        '<button class="btn" id="dlBtn"' + (state.stale ? ' disabled' : '') + '>' +
+          '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' +
+          'تحميل ملف الإكسل' +
+        '</button>' +
+        '<span class="hint">' + esc(R.filename) + '</span>' +
+      '</div>' +
+      '<div class="mt-6">' +
+        '<div class="flex items-baseline gap-3 flex-wrap mb-2">' +
+          '<p class="card-title" style="margin:0">معاينة الشيت الناتج</p>' +
+          '<p class="card-note">' + (R.multi ? 'تعرض المعاينة الورقة الأولى (' + esc(R.sheet) + ') — ' : '') + 'الخلايا المعلَّمة بالأخضر هي التي كُتبت فيها بيانات — أرقام الصفوف حسب الإكسل.</p>' +
+        '</div>' +
+        renderPreview(R) +
+      '</div>';
+
+    const dl = $('#dlBtn');
+    if (dl) dl.addEventListener('click', () => download());
+  }
+
+  function renderPreview(R) {
+    const maxRows = 28, maxCols = 32;
+    const T = state.files.target;
+    const totalCols = Math.max(T.width, R.out.reduce((m, r) => Math.max(m, r ? r.length : 0), 0));
+    const cols = Math.min(totalCols, maxCols);
+
+    const hr = (R.hr != null ? R.hr : T.headerIndex);
+    const firstData = hr + 1;
+    const lastData = Math.min(R.out.length, firstData + maxRows);
+
+    let letters = '<tr class="letters"><th class="rno">#</th>';
+    for (let c = 0; c < cols; c++) letters += '<th>' + colLetter(c) + '</th>';
+    letters += '</tr>';
+
+    let head = '<tr><th class="rno"></th>';
+    for (let c = 0; c < cols; c++) {
+      const v = R.out[hr] ? R.out[hr][c] : null;
+      head += '<th title="' + esc(fmtCell(v)) + '">' + esc(fmtCell(v)) + '</th>';
+    }
+    head += '</tr>';
+
+    let rows = '';
+    for (let r = firstData; r < lastData; r++) {
+      const row = R.out[r] || [];
+      rows += '<tr><td class="rno">' + (r + 1) + '</td>';
+      for (let c = 0; c < cols; c++) {
+        const v = row[c];
+        const ch = R.changed.has(r + ':' + c);
+        const txt = fmtCell(v);
+        rows += '<td' + (ch ? ' class="changed"' : '') + ' title="' + esc(txt) + '">' + esc(txt.length > 60 ? txt.slice(0, 60) + '…' : txt) + '</td>';
+      }
+      rows += '</tr>';
+    }
+
+    const hidden = totalCols > maxCols ? '<p class="card-note mt-2">تُعرض أول ' + maxCols + ' عموداً من ' + num(totalCols) + ' في المعاينة فقط.</p>' : '';
+    const hiddenRows = R.out.length - firstData > maxRows
+      ? '<p class="card-note mt-2">معاينة أول ' + num(maxRows) + ' صفاً من ' + num(R.out.length - firstData) + ' صفاً — الملف الناتج يحتوي عليها كاملة.</p>' : '';
+
+    return '<div class="pv-wrap"><table class="pv"><thead>' + letters + head + '</thead><tbody>' + rows + '</tbody></table></div>' + hidden + hiddenRows;
+  }
+
+  function download() {
+    const R = state.result;
+    if (!R) return;
+    if (state.stale) { toast('أعد تنفيذ المعالجة لتحديث النتيجة قبل التحميل.', 'warn'); return; }
+    try {
+      if (R.blob) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(R.blob);
+        link.download = R.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+      } else {
+        XLSX.writeFile(R.wb, R.filename, { bookType: 'xlsx' });
+      }
+      toast('تم تجهيز الملف «' + R.filename + '» — تحقّق من مجلد التنزيلات.', 'success');
+    } catch (e) {
+      toast('تعذّر إنشاء الملف: ' + e.message, 'error');
+    }
+  }
+
+  function markStale() {
+    if (!state.result || state.stale) return;
+    state.stale = true;
+    renderResult();
+    renderRail();
+  }
+
+  /* =====================================================================
+     10) الربط بالأحداث
+     ===================================================================== */
+  FILE_CFG.forEach((cfg) => {
+    const drop = $(cfg.drop), input = $(cfg.input);
+
+    drop.addEventListener('click', () => input.click());
+    drop.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+    });
+    input.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (f) handleFile(cfg.kind, f);
+    });
+
+    ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => {
+      e.preventDefault(); e.stopPropagation(); drop.classList.add('is-over');
+    }));
+    ['dragleave', 'dragend'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('is-over')));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.remove('is-over');
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleFile(cfg.kind, f);
+      else toast('لم يُعثر على ملف في عملية الإفلات.', 'warn');
+    });
+  });
+
+  ['dragenter', 'dragover', 'drop'].forEach((ev) => {
+    window.addEventListener(ev, (e) => { e.preventDefault(); }, false);
+  });
+
+  $('#srcKey').addEventListener('change', (e) => { state.mapping.srcKey = parseInt(e.target.value, 10); renderKeyCheck(); markStale(); });
+  $('#tgtKey').addEventListener('change', (e) => { state.mapping.tgtKey = parseInt(e.target.value, 10); renderKeyCheck(); markStale(); });
+
+  ['optSpaces:normSpaces', 'optCase:normCase', 'optArabic:normArabic', 'optZeros:normLeadingZeros'].forEach((pair) => {
+    const parts = pair.split(':');
+    $('#' + parts[0]).addEventListener('change', (e) => { state.opts[parts[1]] = e.target.checked; renderKeyCheck(); markStale(); });
+  });
+  $('#dupMode').addEventListener('change', (e) => { state.dupMode = e.target.value; renderKeyCheck(); markStale(); });
+  $('#optAppend').addEventListener('change', (e) => { state.appendUnmatched = e.target.checked; markStale(); });
+  $('#insertMode').addEventListener('change', (e) => { state.insertMode = e.target.value; markStale(); });
+  $('#fillMode').addEventListener('change', (e) => { state.fillMode = e.target.value; markStale(); });
+  $('#sheetsMode').addEventListener('change', (e) => { state.sheetsMode = e.target.value; markStale(); });
+  $('#pageMode').addEventListener('change', (e) => { state.pageMode = e.target.value; markStale(); });
+  $('#optNumber').addEventListener('change', (e) => { state.autoNumber = e.target.checked; markStale(); });
+  $('#nameMode').addEventListener('change', (e) => { state.nameMode = e.target.value; renderNamePreview(); markStale(); });
+  $('#nameCol').addEventListener('change', (e) => {
+    state.nameCol = e.target.value === '__auto__' ? null : parseInt(e.target.value, 10);
+    renderNamePreview(); markStale();
+  });
+
+  $('#selAll').addEventListener('click', () => { state.fields.forEach((f) => { f.enabled = true; }); renderFields(); markStale(); });
+  $('#selNone').addEventListener('click', () => { state.fields.forEach((f) => { f.enabled = false; }); renderFields(); markStale(); });
+
+  $('#runBtn').addEventListener('click', run);
+
+  $('#resetBtn').addEventListener('click', () => {
+    state.files.source = null; state.files.target = null;
+    state.mapping = { srcKey: null, tgtKey: null };
+    state.fields = []; state.result = null; state.stale = false;
+    $('#selCount').textContent = '0 محدّد';
+    render();
+    toast('تم البدء من جديد.', 'info', 3000);
+  });
+
+  /* =====================================================================
+     11) التهيئة
+     ===================================================================== */
+
+  // الإصدار رقم ثابت، وتاريخ «آخر تحديث» يُشتقّ تلقائياً من تاريخ آخر تعديل لهذا الملف
+  const APP_VERSION = '1.4';
+
+  function renderVersion() {
+    const vno = $('#verNo'), vtxt = $('#verText');
+    if (vno) vno.textContent = APP_VERSION;
+    if (!vtxt) return;
+    const t = Date.parse(document.lastModified);
+    const d = isNaN(t) ? new Date() : new Date(t);
+    const p = (n) => String(n).padStart(2, '0');
+    vtxt.textContent = d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate());
+    vtxt.title = 'آخر تحديث لهذا الملف: ' + document.lastModified;
+  }
+
+  function ensureXLSX() {
+    if (window.XLSX) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      s.onload = () => resolve(!!window.XLSX);
+      s.onerror = () => resolve(false);
+      document.head.appendChild(s);
+    });
+  }
+
+  // محرك الضغط/الفتح للكتابة الأمينة (ZIP/XML) — يُنزَّل عند الحاجة فقط
+  function ensureFflate() {
+    if (window.fflate) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/fflate@0.8.2/umd/index.js';
+      s.onload = () => resolve(!!window.fflate);
+      s.onerror = () => resolve(false);
+      document.head.appendChild(s);
+    });
+  }
+
+  (async function init() {
+    const ok = await ensureXLSX();
+    if (!ok) {
+      $('#libError').classList.remove('hidden');
+      $('#runBtn').disabled = true;
+      toast('مكتبة قراءة الإكسل لم تُحمَّل. تحقّق من الاتصال بالإنترنت.', 'error', 12000);
+    }
+    await ensureFflate();
+    renderVersion();
+    render();
+  })();
+})();
+</script>
+</body>
+</html>
